@@ -1,1 +1,54 @@
-{% extends 'base.html' %}{% block body %}<h1>Security & MFA</h1><div class="card"><h2>Authenticator App</h2>{% if u.mfa_enabled %}<p class="accept">MFA is enabled for {{u.email}}.</p><form method="post"><input type="hidden" name="action" value="disable"><label>Current 6-digit code</label><input name="code" maxlength="6" required><button class="secondary">Disable MFA</button></form>{% elif secret %}<p>Add this account to Microsoft Authenticator, Google Authenticator, 1Password, or another TOTP app using the setup key below.</p><p><b>Setup key:</b> <code>{{secret}}</code></p><details><summary>Provisioning URI</summary><code style="word-break:break-all">{{uri}}</code></details><form method="post"><input type="hidden" name="action" value="enable"><label>Enter the 6-digit code shown in your app</label><input name="code" maxlength="6" required><button>Verify & Enable MFA</button></form>{% else %}<p>MFA is currently off.</p><form method="post"><input type="hidden" name="action" value="start"><button>Set Up Authenticator MFA</button></form>{% endif %}</div><div class="card"><p><small>For production deployment, require MFA for privileged laboratory roles and document account recovery procedures.</small></p></div>{% endblock %}
+{% extends 'base.html' %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>Security &amp; MFA</h1>
+    <p>Two-factor sign-in with an authenticator app on your phone.</p>
+  </div>
+</div>
+
+<div class="card" style="max-width:760px">
+  {% if u.mfa_enabled %}
+  <div class="card-head"><h2>Authenticator app</h2><span class="pill good">Enabled</span></div>
+  <p>Two-factor sign-in is on for <b>{{ u.email }}</b>. You'll be asked for a 6-digit code each time you sign in.</p>
+  <details style="margin-top:14px">
+    <summary>Turn off two-factor sign-in</summary>
+    <form method="post" style="max-width:320px">
+      <input type="hidden" name="action" value="disable">
+      <label for="code">Current 6-digit code</label>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+      <button class="secondary" type="submit">Disable MFA</button>
+    </form>
+  </details>
+
+  {% elif secret %}
+  <div class="card-head"><h2>Set up your authenticator app</h2><span class="pill warn">Not finished</span></div>
+  <div class="mfa-setup">
+    <div class="mfa-qr" aria-label="QR code for authenticator setup">{{ qr_svg }}</div>
+    <ol class="mfa-steps">
+      <li><b>Open your authenticator app</b><small>Microsoft Authenticator, Google Authenticator, 1Password or similar.</small></li>
+      <li><b>Tap + and scan this QR code</b><small>Microsoft Authenticator: + → Other account → scan. Google Authenticator: + → Scan a QR code.</small></li>
+      <li><b>Enter the 6-digit code it shows</b>
+        <form method="post" class="mfa-verify">
+          <input type="hidden" name="action" value="enable">
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="123456" required autofocus aria-label="6-digit code">
+          <button type="submit">Verify &amp; enable</button>
+        </form>
+      </li>
+    </ol>
+  </div>
+  <details style="margin-top:16px">
+    <summary>Can't scan? Enter the key manually</summary>
+    <p class="mini" style="margin:6px 0">Choose "enter a setup key" (Google) or "Other account → enter code manually" (Microsoft), then type:</p>
+    <code class="mfa-key">{{ grouped }}</code>
+  </details>
+
+  {% else %}
+  <div class="card-head"><h2>Authenticator app</h2><span class="pill">Off</span></div>
+  <p>Protect your account with a code from your phone in addition to your password.{% if u.role in ('director','master') %} This is required for director and administrator accounts.{% endif %}</p>
+  <form method="post"><input type="hidden" name="action" value="start"><button type="submit">{{ icon('shield') }}Set up authenticator</button></form>
+  {% endif %}
+</div>
+
+<p class="mini" style="max-width:760px">Lost your phone? Ask a LabOS administrator to reset your password in User Management. That also clears two-factor sign-in so you can set it up again.</p>
+{% endblock %}

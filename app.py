@@ -8,6 +8,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.graphics.barcode import code128
 from reportlab.lib.utils import ImageReader
+from markupsafe import Markup
 import os, io, csv, secrets, math, json, ast, operator, string, re, zipfile, shutil, tempfile, hashlib
 from openpyxl import load_workbook
 
@@ -1738,7 +1739,13 @@ def mfa_settings():
         return redirect(url_for('mfa_settings'))
     secret=session.get('mfa_setup_secret')
     uri=pyotp.totp.TOTP(secret).provisioning_uri(name=u.email,issuer_name='Complete Omics LabOS') if secret else None
-    return render_template('mfa_settings.html',u=u,secret=secret,uri=uri)
+    qr_svg=None
+    if uri:
+        # Rendered server-side so the secret never leaves LabOS (no third-party QR service).
+        import qrcode, qrcode.image.svg
+        qr_svg=Markup(qrcode.make(uri,image_factory=qrcode.image.svg.SvgPathImage,box_size=10,border=2).to_string(encoding='unicode'))
+    grouped=' '.join(secret[i:i+4] for i in range(0,len(secret),4)) if secret else None
+    return render_template('mfa_settings.html',u=u,secret=secret,grouped=grouped,uri=uri,qr_svg=qr_svg)
 
 @app.route('/account/change-password',methods=['GET','POST'])
 def change_password():

@@ -568,6 +568,19 @@ summary.mini-button::-webkit-details-marker{display:none}
 .facts dd{margin:0;font-size:13.5px;color:var(--ink);overflow-wrap:anywhere}
 .facts dd small{display:block;color:var(--muted);font-size:12px}
 
+/* ---------- MFA setup ---------- */
+.mfa-setup{display:grid;grid-template-columns:210px minmax(0,1fr);gap:26px;align-items:start}
+.mfa-qr{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:10px;line-height:0}
+.mfa-qr svg{width:100%;height:auto;display:block}
+.mfa-qr svg path{fill:#000}
+.mfa-steps{margin:0;padding-left:20px;display:grid;gap:14px;line-height:1.45}
+.mfa-steps b{display:block;font-weight:600}
+.mfa-steps small{display:block}
+.mfa-verify{display:flex;gap:8px;margin-top:8px;max-width:340px}
+.mfa-verify input{margin:0;font-family:var(--mono);font-size:18px;letter-spacing:.25em;text-align:center}
+.mfa-key{display:inline-block;font-size:15px;letter-spacing:.08em;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:8px 12px;user-select:all}
+@media (max-width:700px){.mfa-setup{grid-template-columns:1fr}.mfa-qr{max-width:220px}}
+
 /* ---------- Toasts / command palette ---------- */
 .cmdk{position:fixed;inset:0;z-index:200;display:none;align-items:flex-start;justify-content:center;padding-top:12vh;background:rgba(8,15,26,.45);backdrop-filter:blur(2px)}
 .cmdk.open{display:flex}
