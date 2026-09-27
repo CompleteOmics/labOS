@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% block body %}
+<div class="topline"><div><h1>Instrument Result Import</h1><p>Import results from CSV or Excel and map them to accession + test code.</p></div><a class="button secondary" href="{{url_for('instrument_import_template')}}">Download CSV Template</a></div>
+<div class="card"><h2>Upload Instrument Results</h2><p>Required columns: <b>accession_no</b>, <b>test_code</b>, <b>result</b>. Imported numeric results are automatically compared with the active reference interval and calculated tests are refreshed.</p><form method="post" enctype="multipart/form-data"><input type="file" name="file" accept=".csv,.xlsx" required><button>Import Results</button></form></div>
+<div class="card"><h2>Example</h2><pre>accession_no,test_code,result
+CO-260921-00001,TSH,2.10</pre><p><small>For production use, validate the mapping for each analyzer/export format before clinical deployment.</small></p></div>
+{% endblock %}

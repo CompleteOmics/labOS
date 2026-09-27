@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="hero diagnostics-hero">
+  <div><div class="eyebrow">INTEROPERABILITY</div><h1>LOINC Mapping</h1>
+  <p>Complete Omics local test identifiers mapped to LOINC {{loinc_version}} for HL7/FHIR exchange. Only rows marked <b>READY</b> with one valid LOINC are considered exchange-eligible automatically.</p></div>
+  <div class="hero-actions"><a class="button secondary" href="{{url_for('loinc_mapping_export')}}">Export Mapping CSV</a></div>
+</div>
+<div class="notice clinical-note"><b>Production safeguard:</b> yellow/orange review, split, provisional and local-code rows are intentionally retained but should not be transmitted as a production LOINC until laboratory review is complete.</div>
+<div class="card diagnostics-controls"><div class="search-wrap"><input id="loincSearch" type="search" placeholder="Search test, local code, LOINC, specimen, platform or status…" oninput="filterLoinc()"></div></div>
+<div class="card" style="overflow:auto">
+<table id="loincTable"><tr><th>Local code</th><th>Test</th><th>Specimen / Unit</th><th>Platform</th><th>LOINC</th><th>LOINC name</th><th>Status</th><th>Version</th>{% if u.role in ('director','master') %}<th>Director edit</th>{% endif %}</tr>
+{% for t in rows %}<tr data-search="{{(t.code ~ ' ' ~ t.name ~ ' ' ~ (t.specimen or '') ~ ' ' ~ (t.method or '') ~ ' ' ~ (t.loinc_code or '') ~ ' ' ~ (t.loinc_name or '') ~ ' ' ~ (t.loinc_status or ''))|lower}}">
+<td><b>{{t.code}}</b></td><td>{{t.name}}</td><td>{{t.specimen or ''}}<br><small>{{t.unit or ''}}</small></td><td>{{t.method or ''}}</td>
+<td>{% if t.loinc_code %}<b>{{t.loinc_code}}</b>{% else %}<span class="status-pill neutral">LOCAL</span>{% endif %}</td><td>{{t.loinc_name or ''}}</td>
+<td>{% if t.loinc_status=='READY' %}<span class="status-pill success">READY</span>{% else %}<span class="status-pill neutral">{{t.loinc_status or 'UNMAPPED'}}</span>{% endif %}</td><td>{{t.loinc_version or ''}}</td>
+{% if u.role in ('director','master') %}<td><details><summary class="mini-button">Edit</summary><form method="post" class="formstack" style="min-width:360px;margin-top:8px"><input type="hidden" name="test_id" value="{{t.id}}"><label>LOINC code<input name="loinc_code" value="{{t.loinc_code or ''}}"></label><label>LOINC long name<input name="loinc_name" value="{{t.loinc_name or ''}}"></label><label>Version<input name="loinc_version" value="{{t.loinc_version or loinc_version}}"></label><label>Status<select name="loinc_status">{% for s in ['READY','VERIFY','VERIFY 2.83','VERIFY SPECIMEN','VERIFY METHOD','VERIFY ANALYTE / METHOD','VERIFY CUTOFF / ANALYTE','SPLIT NEEDED','SPLIT REQUIRED','PROVISIONAL - LEGACY METHOD','LOCAL / NEW LOINC REQUEST','LOCAL CODE','LOCAL / REVIEW'] %}<option {% if t.loinc_status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></label><label>Notes<textarea name="loinc_notes" rows="3">{{t.loinc_notes or ''}}</textarea></label><label>Source<input name="loinc_source" value="{{t.loinc_source or ''}}"></label><button type="submit">Save LOINC Mapping</button></form></details></td>{% endif %}
+</tr>{% endfor %}</table></div>
+<script>function filterLoinc(){const q=document.getElementById('loincSearch').value.toLowerCase().trim();document.querySelectorAll('#loincTable tr[data-search]').forEach(r=>r.style.display=(!q||r.dataset.search.includes(q))?'':'none');}</script>
+{% endblock %}

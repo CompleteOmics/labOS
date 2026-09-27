@@ -1,0 +1,35 @@
+{% extends 'base.html' %}{% block body %}
+<h1>{{plate.name}}</h1><p>96-well layout · Batch {{plate.batch_id or 'not assigned'}}. Select a well to edit or clear it.</p>
+<div class="card plategrid"><table><tr><th></th>{% for c in cols %}<th>{{c}}</th>{% endfor %}</tr>
+{% for r in rows %}<tr><th>{{r}}</th>{% for c in cols %}{% set k=r ~ c %}{% set w=wells.get(k) %}
+<td><button type="button" class="well {% if w %}filled{% endif %}" data-well="{{k}}" aria-label="Select well {{k}}{% if w %}, {{w.label or w.well_type}}{% endif %}"><b>{{k}}</b><br>{% if w %}<small>{{w.well_type}}<br>{{w.label or ''}}</small>{% endif %}</button></td>
+{% endfor %}</tr>{% endfor %}</table></div>
+<div class="card" id="well-editor"><h2>Edit well <span id="selected-well"></span></h2>
+<form method="post" id="well-form"><input type="hidden" name="well" id="well-input"><div class="formrow">
+<div><label for="well-picker">Well</label><select id="well-picker">{% for r in rows %}{% for c in cols %}<option value="{{r}}{{c}}">{{r}}{{c}}</option>{% endfor %}{% endfor %}</select></div>
+<div><label for="well-type">Type</label><select name="well_type" id="well-type">{% for type in ['Sample','Standard','QC','Blank','Control'] %}<option>{{type}}</option>{% endfor %}</select></div>
+<div><label for="sample-id">Sample</label><select name="sample_id" id="sample-id"><option value="">No sample</option>{% for s in samples %}<option value="{{s.id}}">{{s.sample_no}}</option>{% endfor %}</select></div>
+<div><label for="well-label">Label</label><input name="label" id="well-label" maxlength="160" placeholder="S1 / QC-H"></div>
+<div><label for="well-concentration">Concentration</label><input name="concentration" id="well-concentration" maxlength="80"></div></div>
+<button name="action" value="save">Save well</button> <button class="secondary" id="erase-well" name="action" value="erase" type="submit" onclick="return confirm('Clear the selected well?')">Erase selected well</button>
+</form></div>
+<script>
+const wells={{well_data|tojson}};
+const picker=document.getElementById('well-picker');
+function selectWell(code,scroll=false){
+  picker.value=code;document.getElementById('well-input').value=code;
+  document.getElementById('selected-well').textContent=code;
+  const data=wells[code]||{};
+  document.getElementById('well-type').value=data.type||'Sample';
+  document.getElementById('sample-id').value=data.sample_id||'';
+  document.getElementById('well-label').value=data.label||'';
+  document.getElementById('well-concentration').value=data.concentration||'';
+  document.getElementById('erase-well').disabled=!wells[code];
+  document.querySelectorAll('[data-well]').forEach(el=>el.classList.toggle('selected',el.dataset.well===code));
+  if(scroll)document.getElementById('well-editor').scrollIntoView({behavior:'smooth',block:'start'});
+}
+document.querySelectorAll('[data-well]').forEach(el=>el.addEventListener('click',()=>selectWell(el.dataset.well,true)));
+picker.addEventListener('change',()=>selectWell(picker.value));
+selectWell({{selected_well|tojson}});
+</script>
+{% endblock %}

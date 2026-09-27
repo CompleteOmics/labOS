@@ -1,0 +1,12 @@
+{% extends 'base.html' %}{% block body %}
+<div class="grid2">
+  <div class="card"><h1>Built-in Clinical Calculations</h1>
+    <h3>BMI</h3><p><code>BMI = weight(lb) / height(in)^2 × 703</code></p><p class="muted">LabOS calculates BMI automatically when height and weight are entered.</p>
+    <h3>eGFR — CKD-EPI 2021 creatinine, race-free</h3>
+    <p><code>eGFR = 142 × min(Scr/κ,1)^α × max(Scr/κ,1)^−1.200 × 0.9938^Age × 1.012 [if female]</code></p>
+    <p class="muted">Scr in mg/dL; κ=0.7 female or 0.9 male; α=−0.241 female or −0.302 male. LabOS calculates this for adults age 18+ when DOB, sex, and serum creatinine are available. Use IDMS-traceable creatinine and validate locally before clinical reporting.</p>
+  </div>
+  <div class="card"><h2>Configurable Calculation Rules</h2><p><small>Store versioned definitions for additional calculated tests and risk models. Custom regulated algorithms require laboratory validation before clinical reporting.</small></p><table><tr><th>Name</th><th>Output</th><th>Expression</th><th>Active</th></tr>{% for r in rules %}<tr><td>{{r.name}}</td><td>{{r.output_code}}</td><td><code>{{r.expression}}</code></td><td>{{r.active}}</td></tr>{% endfor %}</table></div>
+</div>
+{% if u.role in ('director','master') %}<div class="card"><h2>Add calculation rule</h2><form method="post"><input name="name" required placeholder="e.g. HART CADhs v1"><input name="output_code" required placeholder="CADHS"><textarea name="expression" required placeholder="Documented expression or algorithm specification"></textarea><textarea name="description" placeholder="Version, validation note, required inputs, interpretation"></textarea><button>Save Rule Definition</button></form></div>{% endif %}
+{% endblock %}

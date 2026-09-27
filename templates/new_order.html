@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="hero diagnostics-hero">
+  <div>
+    <div class="eyebrow">{% if internal_order %}INTERNAL LABORATORY ORDER ENTRY{% else %}PROVIDER ORDER ENTRY{% endif %}</div>
+    <h1>{% if internal_order %}New Internal Laboratory Order{% else %}New Laboratory Order{% endif %}</h1>
+    <p>{% if internal_order %}Laboratory staff/director order entry. Select a panel or individual tests; the logged-in user is recorded as the person entering the order.{% else %}Select from the complete Complete Omics ordering catalog. Search by test name, code, specimen, category, or platform.{% endif %}</p>
+  </div>
+</div>
+<form method="post" id="orderForm">
+  {% if internal_order %}<div class="alert success"><b>Internal order entry:</b> This order will be recorded as entered by {{u.name}} ({{role_label(u.role)}}). Enter the actual ordering provider below when applicable.</div>{% endif %}
+  <div class="grid2 order-layout">
+    <div class="card patient-card">
+      <h2>Patient & Provider</h2>
+      <label>Patient name</label><input name="patient_name" required>
+      <label>Date of birth</label><input type="date" name="patient_dob">
+      <label>Sex (for reference interval matching)</label><select name="patient_sex"><option value="">Not specified</option><option>Male</option><option>Female</option></select>
+      <label>MRN / Patient ID</label><input name="patient_mrn" id="patient_mrn">
+      <div class="scan-panel"><h3>Scan ID / Insurance Card</h3><p class="muted">Use a phone camera or upload an image. OCR suggestions are shown for confirmation before submission.</p><div class="buttonrow"><label class="button secondary file-button">Driver License / ID<input type="file" id="licenseScan" accept="image/*" capture="environment" hidden onchange="scanCard(this,'license')"></label><label class="button secondary file-button">Insurance Card<input type="file" id="insuranceScan" accept="image/*" capture="environment" hidden onchange="scanCard(this,'insurance')"></label></div><div id="scanStatus" class="muted"></div></div>
+      <label>Phone</label><input name="patient_phone" id="patient_phone"><label>Email</label><input type="email" name="patient_email" id="patient_email"><label>Address</label><input name="patient_address" id="patient_address"><div class="formgrid"><div><label>City</label><input name="patient_city" id="patient_city"></div><div><label>State</label><input name="patient_state" id="patient_state"></div><div><label>ZIP</label><input name="patient_zip" id="patient_zip"></div></div>
+      <h3>Clinical demographics / intervention history</h3><div class="formgrid"><div><label>Height (in)</label><input type="number" step="0.1" min="0" name="height_in" id="height_in" oninput="calcBMI()"></div><div><label>Weight (lb)</label><input type="number" step="0.1" min="0" name="weight_lb" id="weight_lb" oninput="calcBMI()"></div><div><label>BMI (calculated)</label><input id="bmi_preview" readonly placeholder="auto"></div><div><label>Blood pressure - systolic</label><input type="number" name="systolic_bp" min="0" max="300"></div><div><label>Blood pressure - diastolic</label><input type="number" name="diastolic_bp" min="0" max="200"></div><div><label>Serum creatinine (mg/dL)</label><input type="number" step="0.01" min="0" name="serum_creatinine_mg_dl" id="serum_creatinine_mg_dl"></div><div><label>History of stent</label><select name="stent_history"><option value="">Not documented</option><option>Yes</option><option>No</option><option>Unknown</option></select></div><div><label>Stent date / year</label><input name="stent_date" placeholder="YYYY or YYYY-MM-DD"></div><div><label>History of CABG</label><select name="cabg_history"><option value="">Not documented</option><option>Yes</option><option>No</option><option>Unknown</option></select></div><div><label>CABG date / year</label><input name="cabg_date" placeholder="YYYY or YYYY-MM-DD"></div></div><label>Intervention / cardiovascular history notes</label><textarea name="intervention_notes"></textarea>
+      <label>Ordering provider / authorized requester</label><input name="provider_name" value="{% if internal_order and u.role in ('director','master') %}{{u.name}}{% endif %}" required><small class="muted">{% if internal_order %}Enter the clinician/provider responsible for the order. For director-entered orders, your name is prefilled and may be changed.{% endif %}</small>
+      <label>Notes</label><textarea name="notes"></textarea>
+      <div class="billing-entry">
+        <h3>Payment Option</h3>
+        <label>Payment / payer type</label>
+        <select name="payment_type" id="paymentType" onchange="togglePayerFields()">
+          <option>Insurance</option><option>Self-Pay</option><option>Employer/Contract</option><option>Charity/Free</option>
+        </select>
+        <div id="insuranceFields"><label>Insurance / payer name</label><input name="payer_name" placeholder="e.g., Medicare, BCBS"><label>Member ID</label><input name="insurance_member_id"><label>Group number</label><input name="insurance_group_no"></div>
+        <div id="freeFields" style="display:none"><label>Free / charity reason</label><input name="free_reason" placeholder="Employee benefit, charity clinic, approved waiver…"><small class="muted">Charity/Free requests are recorded as $0 revenue and can be approved by the laboratory director.</small></div>
+      </div>
+      <div class="selected-summary"><b><span id="selectedCount">0</span> test(s) selected</b><button type="button" class="secondary mini-button" onclick="clearSelected()">Clear</button></div>
+    </div>
+    <div>
+      <div class="card diagnostics-controls sticky-controls provider-menu-controls">
+        <div><h2 class="menu-title">Order Tests</h2><p class="muted compact">Choose a panel or expand a clinical group to select individual tests.</p></div>
+        <div class="search-wrap"><input id="orderTestSearch" type="search" placeholder="Search test, panel, code, or category…" oninput="filterOrderTests()"></div>
+      </div>
+      <div class="provider-test-menu" id="providerTestMenu">
+      {% for group_name,group in provider_menu %}
+      <details class="provider-test-group" data-group-search="{{group_name|lower}}" {% if loop.index <= 3 %}open{% endif %}>
+        <summary><span>{{group_name}}</span><span class="group-badge">{{group.tests|length}} tests{% if group.panels %} · {{group.panels|length}} panel{% if group.panels|length != 1 %}s{% endif %}{% endif %}</span></summary>
+        <div class="provider-group-body">
+          {% if group.panels %}
+          <div class="panel-choice-area"><div class="section-label">Panels / Bundles</div><div class="panel-grid">
+          {% for panel in group.panels %}
+            <button type="button" class="panel-select-card" data-search="{{(panel.name ~ ' ' ~ group_name ~ ' ' ~ (panel.member_names|join(' ')))|lower}}" onclick='selectPanel({{panel.test_ids|tojson}}, this)'>
+              <span class="panel-icon">＋</span><span><b>{{panel.name}}</b><small>{{panel.component_count}} components · click to select</small></span>
+            </button>
+          {% endfor %}
+          </div></div>
+          {% endif %}
+          <details class="individual-tests" open>
+            <summary>Individual Tests <span class="muted">— choose one or more</span></summary>
+            <div class="compact-test-grid">
+            {% for t in group.tests %}
+              <label class="compact-test-row order-test-card" data-search="{{(t.name ~ ' ' ~ t.code ~ ' ' ~ group_name ~ ' ' ~ (t.specimen or '') ~ ' ' ~ (t.method or ''))|lower}}">
+                <input class="order-checkbox" type="checkbox" name="tests" value="{{t.id}}" onchange="updateSelectedCount()">
+                <span class="compact-test-name"><b>{{t.name}}</b><small>{{t.code}}{% if t.specimen %} · {{t.specimen}}{% endif %}</small></span>
+              </label>
+            {% endfor %}
+            </div>
+          </details>
+        </div>
+      </details>
+      {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="order-submit-bar"><span><b><span id="selectedCountBottom">0</span> test(s)</b> selected for this order</span><button type="submit">{% if internal_order %}Submit Internal Order{% else %}Submit Order{% endif %}</button></div>
+</form>
+<script>
+function selectPanel(ids,button){ids.forEach(id=>{const cb=document.querySelector(`.order-checkbox[value=\"${id}\"]`);if(cb)cb.checked=true;});button.classList.add('panel-selected');setTimeout(()=>button.classList.remove('panel-selected'),900);updateSelectedCount();}
+function filterOrderTests(){const q=document.getElementById('orderTestSearch').value.toLowerCase().trim();document.querySelectorAll('.provider-test-group').forEach(group=>{let any=!q||group.dataset.groupSearch.includes(q);group.querySelectorAll('.order-test-card,.panel-select-card').forEach(item=>{const ok=!q||item.dataset.search.includes(q);item.style.display=ok?'':'none';if(ok)any=true;});group.style.display=any?'':'none';if(q&&any)group.open=true;});}
+function updateSelectedCount(){const n=document.querySelectorAll('.order-checkbox:checked').length;document.getElementById('selectedCount').textContent=n;document.getElementById('selectedCountBottom').textContent=n;}
+function clearSelected(){document.querySelectorAll('.order-checkbox:checked').forEach(x=>x.checked=false);updateSelectedCount();}
+function calcBMI(){const h=parseFloat(document.getElementById('height_in').value),w=parseFloat(document.getElementById('weight_lb').value);document.getElementById('bmi_preview').value=(h>0&&w>0)?((w/(h*h))*703).toFixed(1):'';}
+async function scanCard(input,type){const f=input.files[0];if(!f)return;const status=document.getElementById('scanStatus');status.textContent='Reading card...';const fd=new FormData();fd.append('card',f);fd.append('card_type',type);try{const r=await fetch('{{url_for("card_scan")}}',{method:'POST',body:fd,headers:{'X-CSRF-Token':window.LABOS_CSRF||''}});const d=await r.json();if(!r.ok){status.textContent=d.error||'Could not read card.';return;}for(const [k,v] of Object.entries(d)){const el=document.getElementById(k)||document.querySelector(`[name="${k}"]`);if(el&&v&&!el.value)el.value=v;}status.textContent='Card read. Please verify every populated field against the card before submitting.';togglePayerFields();}catch(e){status.textContent='Card scan failed: '+e;}}
+function togglePayerFields(){const v=document.getElementById('paymentType').value;document.getElementById('insuranceFields').style.display=(v==='Insurance')?'':'none';document.getElementById('freeFields').style.display=(v==='Charity/Free')?'':'none';}
+togglePayerFields();
+</script>
+{% endblock %}

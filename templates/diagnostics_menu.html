@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="hero diagnostics-hero">
+  <div>
+    <div class="eyebrow">CLINICAL TEST CATALOG</div>
+    <h1>Extended Diagnostics Menu</h1>
+    <p>Platform-organized candidate menu for chemistry, immunoassay, hematology and urine toxicology. New assays remain non-orderable until the Laboratory Director activates them after local verification/validation.</p>
+  </div>
+  <div class="hero-actions"><a class="button secondary" href="{{url_for('diagnostics_export')}}">Export Menu CSV</a></div>
+</div>
+
+<div class="metric-grid diagnostics-metrics">
+  <div class="metric-card"><span>Candidate analytes</span><strong>{{total}}</strong><small>Across configured platforms</small></div>
+  <div class="metric-card"><span>Currently orderable</span><strong>{{active}}</strong><small>Director-activated</small></div>
+  {% for s in stats %}<div class="metric-card"><span>{{s.platform}}</span><strong>{{s.count}}</strong><small>{{s.active}} active</small></div>{% endfor %}
+</div>
+
+<div class="card diagnostics-controls">
+  <div class="search-wrap"><input id="diagnosticSearch" type="search" placeholder="Search analyte, code, specimen, category or platform…" oninput="filterDiagnostics()"></div>
+  <div class="chip-row" id="platformChips">
+    <button class="filter-chip active" onclick="setPlatform('all',this)">All platforms</button>
+    {% for platform in grouped.keys() %}<button class="filter-chip" onclick="setPlatform('{{platform|e}}',this)">{{platform}}</button>{% endfor %}
+  </div>
+</div>
+
+<div class="notice clinical-note"><b>Clinical control:</b> Platform availability is not the same as a validated Complete Omics test menu. Reference intervals, specimen requirements, reportable range, calibration/QC, CPT coding and clinical claims must be approved locally before activation.</div>
+
+{% for platform,categories in grouped.items() %}
+<section class="platform-section diagnostic-platform" data-platform="{{platform}}">
+  <div class="platform-heading">
+    <div><span class="platform-kicker">PLATFORM</span><h2>{{platform}}</h2></div>
+    <span class="status-pill neutral">{{ categories.values()|map('length')|sum }} analytes</span>
+  </div>
+  {% for category,items in categories.items() %}
+  <div class="diagnostic-category">
+    <h3>{{category}}</h3>
+    <div class="diagnostic-grid">
+      {% for item in items %}
+      <article class="diagnostic-test-card" data-search="{{(item.name ~ ' ' ~ item.code ~ ' ' ~ item.category ~ ' ' ~ item.platform ~ ' ' ~ item.specimen)|lower}}">
+        <div class="test-card-top">
+          <div><span class="test-code">{{item.code}}</span><h4>{{item.name}}</h4></div>
+          {% if item.active %}<span class="status-pill success">Orderable</span>{% else %}<span class="status-pill neutral">Candidate</span>{% endif %}
+        </div>
+        <div class="test-meta"><span><b>Specimen</b>{{item.specimen}}</span><span><b>Unit</b>{{item.unit}}</span><span><b>LOINC</b>{{item.loinc_code or 'Local / pending'}}</span><span><b>LOINC status</b>{{item.loinc_status or 'Unmapped'}}</span></div>
+        {% if u.role=='director' and item.test_id %}
+        <form method="post" action="{{url_for('diagnostics_toggle',test_id=item.test_id)}}">
+          <button class="mini-button {% if item.active %}danger-outline{% endif %}" type="submit">{% if item.active %}Deactivate{% else %}Activate for Ordering{% endif %}</button>
+        </form>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+
+<script>
+let selectedPlatform='all';
+function setPlatform(platform,el){
+  selectedPlatform=platform;
+  document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('active'));
+  el.classList.add('active');
+  filterDiagnostics();
+}
+function filterDiagnostics(){
+  const q=document.getElementById('diagnosticSearch').value.toLowerCase().trim();
+  document.querySelectorAll('.diagnostic-platform').forEach(section=>{
+    const platform=section.dataset.platform;
+    const platformOK=selectedPlatform==='all'||platform===selectedPlatform;
+    let any=false;
+    section.querySelectorAll('.diagnostic-test-card').forEach(card=>{
+      const ok=platformOK && (!q || card.dataset.search.includes(q));
+      card.style.display=ok?'':'none'; if(ok) any=true;
+    });
+    section.style.display=any?'':'none';
+    section.querySelectorAll('.diagnostic-category').forEach(cat=>{
+      const visible=[...cat.querySelectorAll('.diagnostic-test-card')].some(c=>c.style.display!=='none');
+      cat.style.display=visible?'':'none';
+    });
+  });
+}
+</script>
+{% endblock %}

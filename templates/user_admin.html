@@ -1,0 +1,27 @@
+{% extends 'base.html' %}{% block body %}
+<div class="page-head"><div><h1>User Management</h1><p>Create individual provider and laboratory staff accounts. Provider accounts can be assigned to a clinic so physicians in the same clinic see the clinic's shared order queue.</p></div></div>
+<div class="metric-grid user-metrics"><div class="metric-card"><span>Active providers</span><strong>{{counts.providers}}</strong></div><div class="metric-card"><span>Active staff</span><strong>{{counts.staff}}</strong></div><div class="metric-card"><span>Director/admin</span><strong>{{counts.directors}}</strong></div></div>
+<div class="grid two user-admin-grid">
+<section class="card"><h2>Add user</h2><form method="post"><input type="hidden" name="action" value="create">
+<label>Full name</label><input name="name" required>
+<label>Username</label><input name="username" required placeholder="e.g., jsmith">
+<label>Email</label><input name="email" type="email" required>
+<label>Role</label><select name="role" id="roleSelect"><option value="customer">Provider / clinic user</option><option value="staff">Laboratory staff</option>{% if is_master(u) %}<option value="director">Laboratory director</option>{% endif %}</select>
+<label>Clinic assignment <small>(provider accounts)</small></label><select name="clinic_id"><option value="">No clinic / assign later</option>{% for c in clinics %}<option value="{{c.id}}">{{c.name}}{% if c.code %} · {{c.code}}{% endif %}</option>{% endfor %}</select>
+<label>Organization <small>(used for staff/director or fallback)</small></label><input name="organization" placeholder="Complete Omics Inc.">
+<label>Temporary password <small>(leave blank to generate securely)</small></label><input name="temporary_password" type="text" autocomplete="off">
+<button>Create user</button></form>
+<div class="clinical-note"><b>Clinic privacy boundary:</b> Provider accounts assigned to the same clinic can see that clinic's orders. Providers from another clinic cannot access them. Complete Omics staff/directors retain the laboratory-wide work queue.</div></section>
+<section class="card"><h2>Account controls</h2><div class="user-table-wrap"><table class="user-table"><tr><th>User</th><th>Role</th><th>Clinic / organization</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr>
+{% for x in users %}<tr><td><b>{{x.name}}</b><small>@{{x.username}}<br>{{x.email}}</small></td><td>{{role_label(x.role)}}</td><td>
+{% if x.role=='customer' %}<form method="post" action="{{url_for('assign_user_clinic',user_id=x.id)}}" class="inline-form"><select name="clinic_id" class="mini-select"><option value="">Unassigned</option>{% for c in clinics %}<option value="{{c.id}}" {% if x.clinic_id==c.id %}selected{% endif %}>{{c.name}}</option>{% endfor %}</select><button class="mini-button">Save</button></form>{% else %}{{x.organization or 'Complete Omics Inc.'}}{% endif %}</td><td><span class="status-pill {{'success' if x.active else 'neutral'}}">{{'Active' if x.active else 'Inactive'}}</span>{% if x.must_change_password %}<small>Temporary password / change required</small>{% endif %}</td><td>{{x.last_login_at.strftime('%Y-%m-%d %H:%M') if x.last_login_at else 'Never'}}</td><td>
+{% if x.role not in ('master','director') or is_master(u) %}
+<details class="password-control"><summary>Password & access</summary>
+<form method="post" class="password-form"><input type="hidden" name="user_id" value="{{x.id}}">
+<label>Set a password <small>(leave blank to generate a secure temporary password)</small></label>
+<input type="password" name="new_password" minlength="10" autocomplete="new-password" placeholder="At least 10 characters with letters and numbers">
+<label class="checkline compact-check"><input type="checkbox" name="force_change" value="1" checked> Require user to change password at next sign-in</label>
+<div class="inline-form"><button class="mini-button" name="action" value="set_password">Save password</button><button class="mini-button ghost" name="action" value="reset">Generate temporary password</button>{% if x.id != u.id %}<button class="mini-button {{'danger-outline' if x.active else ''}}" name="action" value="{{'deactivate' if x.active else 'activate'}}">{{'Deactivate' if x.active else 'Activate'}}</button>{% endif %}</div>
+{% if x.id != u.id %}<div class="user-delete-zone"><div><b>Remove account</b><small>Unused accounts are deleted permanently. Accounts tied to orders, results, shared links, QC, or audit history are securely archived instead so laboratory records remain attributable.</small></div><button class="mini-button delete-user-button" name="action" value="delete" formnovalidate onclick="return confirm('Remove {{ x.name|e }} from LabOS?\n\nIf this account has never been used, it will be permanently deleted. If it is linked to laboratory or audit records, access will be revoked and the account will be archived instead.');">Delete / Archive User</button></div>{% endif %}
+</form></details>{% else %}<small>Master-only control</small>{% endif %}</td></tr>{% endfor %}</table></div></section>
+</div>{% endblock %}

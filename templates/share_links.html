@@ -1,0 +1,20 @@
+{% extends 'base.html' %}{% block body %}
+<h1>Secure External Request Links</h1>
+{% if local_only %}
+<div class="card" style="border-left:5px solid #b91c1c"><h2>External sharing is not configured yet</h2>
+<p>You are currently opening LabOS from <b>{{request.host}}</b>. A localhost/127.0.0.1 URL works only on this computer and cannot be emailed to an outside provider.</p>
+<p>Deploy LabOS to a public HTTPS host and set <code>PUBLIC_BASE_URL=https://your-domain</code>. Recommended example: <code>https://labos.completeomics.com</code>.</p></div>
+{% elif public_base %}
+<div class="card"><b>Public link domain:</b> <code>{{public_base}}</code> &nbsp; <span class="accept">External link mode enabled</span></div>
+{% endif %}
+<div class="grid2"><div class="card"><h2>Create a secure clinic/provider link</h2>
+<p>This creates a time-limited tokenized URL. The recipient does <b>not</b> need an LIS username or password.</p>
+<form method="post"><label>Link name</label><input name="label" placeholder="e.g. Dr Smith clinic – HART requests" required>
+<label>Clinic assignment</label><select name="clinic_id"><option value="">Unassigned / use organization text</option>{% for c in clinics %}<option value="{{c.id}}">{{c.name}}</option>{% endfor %}</select>
+<label>Organization shown on form <small>(fallback)</small></label><input name="organization_hint" placeholder="Clinic / customer name">
+<label>Expires after (days)</label><input type="number" name="expires_days" value="30" min="1" max="365">
+<label>Allowed tests</label><small>Leave all unchecked to offer every active test.</small>{% for t in tests %}<label class="check"><input type="checkbox" name="tests" value="{{t.id}}"> <b>{{t.name}}</b><span>{{t.specimen}} · {{t.method}}</span></label>{% endfor %}<button>Create Share Link</button></form></div>
+<div class="card"><h2>How external access works</h2><ol><li>Create a secure link here.</li><li>Copy the HTTPS URL and send it to a provider/clinic.</li><li>The provider opens only the external requisition page—no LIS login is required.</li><li>The submitted order appears in your protected LabOS Orders queue.</li><li>Internal pages, prior patient records, finance, QC, user management, and other clinics remain inaccessible through the public link.</li></ol>
+<p><b>Connectivity test:</b> open <code>{{request.url_root.rstrip('/')}}/public-link-check</code> in a private/incognito browser. It should return a small JSON message without asking for credentials.</p></div></div>
+<div class="card"><h2>Existing Links</h2><table><tr><th>Name</th><th>Clinic</th><th>Share URL</th><th>Expires</th><th>Uses</th><th>Status</th><th></th></tr>{% for x in links %}<tr><td>{{x.label}}</td><td>{{(x.organization_hint or "—")}}</td><td><input class="shareurl" readonly value="{{public_urls[x.id]}}" onclick="this.select()"><button type="button" class="secondary" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='Copied'">Copy</button></td><td>{{fmt_dt(x.expires_at)}}</td><td>{{x.use_count}}</td><td>{{'Active' if x.active else 'Disabled'}}</td><td><form method="post" action="{{url_for('toggle_share_link',link_id=x.id)}}"><button class="secondary">{{'Disable' if x.active else 'Enable'}}</button></form></td></tr>{% endfor %}</table></div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block body %}
+<h1>Security &amp; Compliance Center</h1>
+<div class="notice"><b>Readiness workspace:</b> these controls help document safeguards and evidence. They do not by themselves make the organization “HIPAA certified.” Complete Omics must still perform an organization-wide risk analysis, implement policies and safeguards, execute required BAAs, train workforce members, and validate the production environment.</div>
+<div class="metric-grid">
+ <div class="metric"><b>HTTPS public URL</b><span class="{{'ok' if posture.https_configured else 'bad'}}">{{'Configured' if posture.https_configured else 'Needs configuration'}}</span></div>
+ <div class="metric"><b>Secure session cookie</b><span class="{{'ok' if posture.secure_cookie else 'bad'}}">{{'Enabled' if posture.secure_cookie else 'Enable COOKIE_SECURE=1'}}</span></div>
+ <div class="metric"><b>Privileged MFA enrollment</b><span>{{posture.privileged_mfa_pct}}%</span></div>
+ <div class="metric"><b>Audit integrity</b><span class="{{'ok' if posture.audit_chain_ok else 'bad'}}">{{'Verified' if posture.audit_chain_ok else 'Check failed'}}</span></div>
+ <div class="metric"><b>Idle timeout</b><span>{{posture.idle_timeout}} min</span></div>
+ <div class="metric"><b>Failed-login lockout</b><span>{{posture.lockout_limit}} attempts</span></div>
+</div>
+<div class="grid2">
+<section class="card"><h2>Compliance Profile</h2><form method="post"><input type="hidden" name="action" value="settings">
+<label>Security Officer<input name="security_officer" value="{{settings.security_officer}}"></label>
+<label>Privacy Officer<input name="privacy_officer" value="{{settings.privacy_officer}}"></label>
+<label>Last HIPAA Security Risk Analysis<input type="date" name="risk_analysis_date" value="{{settings.risk_analysis_date}}"></label>
+<label>Next Risk Review Due<input type="date" name="risk_review_due" value="{{settings.risk_review_due}}"></label>
+<label>Incident/Breach Contact<input name="incident_contact" value="{{settings.incident_contact}}"></label>
+<label>Last BAA/Vendor Review<input type="date" name="baa_review_date" value="{{settings.baa_review_date}}"></label>
+<label>Last Backup Restore Test<input type="date" name="backup_test_date" value="{{settings.backup_test_date}}"></label>
+<label>Last Vulnerability Scan<input type="date" name="vulnerability_scan_date" value="{{settings.vulnerability_scan_date}}"></label>
+<button>Save compliance profile</button></form></section>
+<section class="card"><h2>Add Compliance Evidence / Action</h2><form method="post"><input type="hidden" name="action" value="add_record">
+<label>Type<select name="record_type"><option>Risk</option><option>Incident</option><option>Vendor/BAA</option><option>Training</option><option>Policy</option><option>Assessment</option></select></label>
+<label>Title<input name="title" required></label><label>Owner<input name="owner"></label>
+<label>Status<select name="status"><option>Open</option><option>In Progress</option><option>Mitigated</option><option>Completed</option><option>Accepted Risk</option></select></label>
+<label>Severity<select name="severity"><option></option><option>Low</option><option>Moderate</option><option>High</option><option>Critical</option></select></label>
+<label>Due date<input type="date" name="due_date"></label><label>Evidence reference<input name="evidence_ref" placeholder="Policy ID, ticket, contract, scan report..."></label>
+<label>Notes<textarea name="notes" rows="4"></textarea></label><button>Add record</button></form></section>
+</div>
+<section class="card"><h2>Compliance Register</h2><p>Risks {{counts['Risk']}} · Incidents {{counts['Incident']}} · Vendor/BAA {{counts['Vendor/BAA']}} · Training {{counts['Training']}} · Policies {{counts['Policy']}} · Assessments {{counts['Assessment']}}</p>
+<div class="tablewrap"><table><tr><th>Type</th><th>Title</th><th>Owner</th><th>Severity</th><th>Status</th><th>Due</th><th>Evidence</th><th>Update</th></tr>{% for r in records %}<tr><td>{{r.record_type}}</td><td><b>{{r.title}}</b><br><small>{{r.notes or ''}}</small></td><td>{{r.owner or ''}}</td><td>{{r.severity or ''}}</td><td>{{r.status}}</td><td>{{r.due_date or ''}}</td><td>{{r.evidence_ref or ''}}</td><td><form method="post" action="{{url_for('compliance_record_status',record_id=r.id)}}"><select name="status"><option>{{r.status}}</option><option>Open</option><option>In Progress</option><option>Mitigated</option><option>Completed</option><option>Accepted Risk</option></select><input type="date" name="completed_date" value="{{r.completed_date or ''}}"><button class="secondary">Update</button></form></td></tr>{% else %}<tr><td colspan="8">No compliance records yet.</td></tr>{% endfor %}</table></div></section>
+{% endblock %}

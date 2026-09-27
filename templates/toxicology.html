@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="hero tox-hero">
+  <div><div class="eyebrow">COMPLETE OMICS · LC-MS/MS</div><h1>Urine Toxicology Command Center</h1>
+  <p>Quantitative pain-management toxicology with analyte-specific reportable limits, batch acceptance controls, specimen-validity checks and director-ready audit history.</p></div>
+  <div class="hero-actions"><a class="button secondary" href="{{url_for('toxicology_export')}}">Export Toxicology CSV</a></div>
+</div>
+
+<div class="metric-grid">
+  <div class="metric-card"><span>LC-MS/MS analytes</span><strong>{{menu|selectattr('spec')|list|length}}</strong><small>Quantitative specifications configured</small></div>
+  <div class="metric-card"><span>Total menu entries</span><strong>{{menu|length}}</strong><small>Includes validity and adjunct testing</small></div>
+  <div class="metric-card"><span>Orderable now</span><strong>{{menu|selectattr('active')|list|length}}</strong><small>Director activated</small></div>
+  <div class="metric-card"><span>Recent batch reviews</span><strong>{{recent|length}}</strong><small>Accepted / held runs</small></div>
+</div>
+
+<div class="grid-2 tox-layout">
+  <section class="card">
+    <div class="section-head"><div><span class="platform-kicker">METHOD CONTROL</span><h2>Batch Acceptance Review</h2></div><span class="status-pill neutral">Release gate</span></div>
+    <form method="post" action="{{url_for('toxicology_batch_review')}}" class="tox-review-form">
+      <label>Run name<input name="run_name" placeholder="e.g., TOX-2026-09-21-AM" required></label>
+      <label>Linked LabOS batch<select name="batch_id"><option value="">Not linked</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}} — {{b.name}}</option>{% endfor %}</select></label>
+      <div class="check-grid">
+        <label><input type="checkbox" name="calibrators_ok"> Calibrators acceptable</label>
+        <label><input type="checkbox" name="qc_ok"> QC acceptable</label>
+        <label><input type="checkbox" name="retention_time_ok"> Retention time acceptable</label>
+        <label><input type="checkbox" name="ion_ratio_ok"> Ion ratio acceptable</label>
+        <label><input type="checkbox" name="carryover_ok"> Carryover acceptable</label>
+        <label><input type="checkbox" name="internal_standards_ok"> Internal standards acceptable</label>
+        <label><input type="checkbox" name="specimen_validity_ok"> Specimen validity reviewed</label>
+      </div>
+      <label>Review notes<textarea name="notes" rows="3" placeholder="Document exclusions, dilution/reanalysis, interference review, corrective action…"></textarea></label>
+      <button class="button" type="submit">Save Batch Review</button>
+    </form>
+    <div class="rule-list">{% for title,text in rules %}<div class="rule-row"><b>{{title}}</b><span>{{text}}</span></div>{% endfor %}</div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><div><span class="platform-kicker">AUDITABLE QC</span><h2>Recent Toxicology Reviews</h2></div></div>
+    {% if recent %}<div class="review-timeline">{% for r in recent %}<div class="review-item"><div><b>{{r.run_name}}</b><span>{{r.reviewed_at|fmt_dt if false else r.reviewed_at}}</span></div><span class="status-pill {{'success' if r.decision=='Accept' else 'danger'}}">{{r.decision}}</span><p>{{r.notes or 'No notes entered.'}}</p></div>{% endfor %}</div>{% else %}<p class="muted">No toxicology batch reviews have been saved yet.</p>{% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <div class="section-head"><div><span class="platform-kicker">ANALYTE LIBRARY</span><h2>Complete Omics Urine Toxicology Menu</h2></div><input id="toxSearch" type="search" placeholder="Search analyte or category…" oninput="filterTox()"></div>
+  <div class="tox-table-wrap"><table class="tox-table"><thead><tr><th>Analyte</th><th>Category</th><th>Internal standard</th><th>LLOQ</th><th>Reporting cutoff</th><th>ULOQ</th><th>Status</th></tr></thead><tbody>
+  {% for x in menu %}<tr data-search="{{(x.name ~ ' ' ~ x.category ~ ' ' ~ x.code)|lower}}"><td><b>{{x.name}}</b><small>{{x.code}}</small></td><td>{{x.category}}</td><td>{{x.spec.internal_standard if x.spec else '—'}}</td><td>{{x.spec.lloq if x.spec else '—'}}</td><td>{{x.spec.cutoff if x.spec else '—'}}</td><td>{{x.spec.uloq if x.spec else '—'}}</td><td>{% if x.active %}<span class="status-pill success">Orderable</span>{% else %}<span class="status-pill neutral">Configured</span>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="small-note">Quantitative limits are expressed in ng/mL where configured. Hydrolysis-performance and specimen-validity entries are operational controls rather than routine quantitative patient analytes.</p>
+</section>
+<script>function filterTox(){const q=document.getElementById('toxSearch').value.toLowerCase().trim();document.querySelectorAll('.tox-table tbody tr').forEach(r=>r.style.display=(!q||r.dataset.search.includes(q))?'':'none');}</script>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="public-wrap"><div class="card">
+<h1>Complete Omics Inc.</h1><h2>Laboratory Test Request</h2><p><b>{{link.label}}</b>{% if link.organization_hint %} · {{link.organization_hint}}{% endif %}</p>
+<p class="notice">This secure link creates a new request only. It does not provide access to existing patient records.</p>
+<form method="post">
+<div class="grid2"><div><h3>Requester</h3><label>Your name *</label><input name="requester_name" required><label>Email *</label><input type="email" name="requester_email" required><label>Phone</label><input name="requester_phone"><label>Clinic / organization</label><input name="requester_organization" value="{{link.organization_hint or ''}}"><label>Ordering provider *</label><input name="provider_name" required></div><div><h3>Patient</h3><label>Patient name *</label><input name="patient_name" required><label>Date of birth</label><input type="date" name="patient_dob"><label>Sex (for reference interval matching)</label><select name="patient_sex"><option value="">Not specified</option><option>Male</option><option>Female</option></select><label>MRN / Patient ID</label><input name="patient_mrn"><label>Clinical / order notes</label><textarea name="notes"></textarea></div></div>
+<div class="card soft billing-entry"><h3>Payment Option</h3><div class="formgrid"><div><label>Payment / payer type</label><select name="payment_type" id="publicPaymentType" onchange="togglePublicPayer()"><option>Insurance</option><option>Self-Pay</option><option>Employer/Contract</option><option>Charity/Free</option></select></div><div id="publicPayerName"><label>Insurance / payer name</label><input name="payer_name"></div><div id="publicMember"><label>Member ID</label><input name="insurance_member_id"></div><div id="publicGroup"><label>Group number</label><input name="insurance_group_no"></div><div id="publicFree" class="full" style="display:none"><label>Free / charity reason</label><input name="free_reason" placeholder="Charity clinic, employee program, approved waiver…"><small class="muted">The laboratory will review free/charity requests before final billing disposition.</small></div></div></div>
+<h3>Requested Tests</h3>
+<p class="muted">Select a commonly ordered panel or expand a clinical group for individual tests.</p>
+<div class="diagnostics-controls provider-menu-controls"><div class="search-wrap"><input id="publicTestSearch" type="search" placeholder="Search test, panel, code, or category…" oninput="filterPublicTests()"></div><div><b><span id="publicSelectedCount">0</span> test(s) selected</b></div></div>
+<div class="provider-test-menu">
+{% for group_name,group in provider_menu %}
+<details class="provider-test-group public-order-group" data-group-search="{{group_name|lower}}" {% if loop.index <= 3 %}open{% endif %}>
+<summary><span>{{group_name}}</span><span class="group-badge">{{group.tests|length}} tests{% if group.panels %} · {{group.panels|length}} panel{% if group.panels|length != 1 %}s{% endif %}{% endif %}</span></summary>
+<div class="provider-group-body">
+{% if group.panels %}<div class="panel-choice-area"><div class="section-label">Panels / Bundles</div><div class="panel-grid">{% for panel in group.panels %}<button type="button" class="panel-select-card public-panel-card" data-search="{{(panel.name ~ ' ' ~ group_name ~ ' ' ~ (panel.member_names|join(' ')))|lower}}" onclick='selectPublicPanel({{panel.test_ids|tojson}}, this)'><span class="panel-icon">＋</span><span><b>{{panel.name}}</b><small>{{panel.component_count}} components · click to select</small></span></button>{% endfor %}</div></div>{% endif %}
+<details class="individual-tests" open><summary>Individual Tests <span class="muted">— choose one or more</span></summary><div class="compact-test-grid">{% for t in group.tests %}<label class="compact-test-row public-order-test" data-search="{{(t.name ~ ' ' ~ t.code ~ ' ' ~ group_name ~ ' ' ~ (t.specimen or '') ~ ' ' ~ (t.method or ''))|lower}}"><input class="public-order-checkbox" type="checkbox" name="tests" value="{{t.id}}" onchange="updatePublicCount()"><span class="compact-test-name"><b>{{t.name}}</b><small>{{t.code}}{% if t.specimen %} · {{t.specimen}}{% endif %}</small></span></label>{% endfor %}</div></details>
+</div></details>
+{% endfor %}
+</div>
+<button>Submit Request to Complete Omics</button>
+</form></div></div>
+<script>
+function selectPublicPanel(ids,button){ids.forEach(id=>{const cb=document.querySelector(`.public-order-checkbox[value=\"${id}\"]`);if(cb)cb.checked=true;});button.classList.add('panel-selected');setTimeout(()=>button.classList.remove('panel-selected'),900);updatePublicCount();}
+function filterPublicTests(){const q=document.getElementById('publicTestSearch').value.toLowerCase().trim();document.querySelectorAll('.public-order-group').forEach(group=>{let any=!q||group.dataset.groupSearch.includes(q);group.querySelectorAll('.public-order-test,.public-panel-card').forEach(item=>{const ok=!q||item.dataset.search.includes(q);item.style.display=ok?'':'none';if(ok)any=true;});group.style.display=any?'':'none';if(q&&any)group.open=true;});}
+function updatePublicCount(){document.getElementById('publicSelectedCount').textContent=document.querySelectorAll('.public-order-checkbox:checked').length;}
+function togglePublicPayer(){const v=document.getElementById('publicPaymentType').value;const ins=v==='Insurance';document.getElementById('publicPayerName').style.display=ins?'':'none';document.getElementById('publicMember').style.display=ins?'':'none';document.getElementById('publicGroup').style.display=ins?'':'none';document.getElementById('publicFree').style.display=(v==='Charity/Free')?'':'none';}
+togglePublicPayer();
+</script>
+{% endblock %}

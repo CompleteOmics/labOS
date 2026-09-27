@@ -1,0 +1,21 @@
+{% extends 'base.html' %}{% block body %}
+<div class="topline"><div><h1>Clinic Excel Order Import</h1><p class="muted">Bulk-import received HART samples from clinic spreadsheets into LabOS. The importer recognizes the structure used in the provided September 2026 workbook.</p></div><a class="button secondary" href="{{url_for('standing_orders')}}">Manage Standing Orders</a></div>
+<div class="card">
+<form method="post" enctype="multipart/form-data" class="formgrid">
+<label>Excel workbook (.xlsx)<input type="file" name="workbook" accept=".xlsx,.xlsm" required></label>
+<label>Sheet name (optional)<input name="sheet_name" placeholder="Leave blank to auto-detect the order sheet"></label>
+<div class="full"><b>Import mode</b><div class="radio-row"><label><input type="radio" name="mode" value="preview" checked> Preview only — no database changes</label><label><input type="radio" name="mode" value="commit"> Import into LabOS</label></div></div>
+<div class="full"><button type="submit">Read Workbook</button></div>
+</form>
+<p class="muted">Recognized columns include Order/Sample ID, Date Received, Date Collected, Account ID, Account Name/Clinic, patient name, DOB, Sex, CADhs, CVE, Received By, FedEx tracking and Notes. Duplicate accession/sample IDs are skipped.</p>
+</div>
+{% if warnings %}<div class="alert warning">{% for w in warnings %}<div>{{w}}</div>{% endfor %}</div>{% endif %}
+{% if summary %}
+<div class="metric-grid">
+<div class="metric"><b>{{summary.rows}}</b><span>Rows read</span></div><div class="metric"><b>{{summary.ready}}</b><span>Ready</span></div><div class="metric"><b>{{summary.imported}}</b><span>Imported</span></div><div class="metric"><b>{{summary.duplicates}}</b><span>Duplicates</span></div><div class="metric"><b>{{summary.no_tests}}</b><span>No HART test</span></div><div class="metric"><b>{{summary.invalid_dob}}</b><span>DOB review</span></div>
+</div>
+{% endif %}
+{% if preview %}<div class="card"><div class="topline"><h2>Import Preview</h2><small>Showing up to 200 rows</small></div><div class="table-scroll"><table><tr><th>Sample</th><th>Received</th><th>Collected</th><th>Clinic</th><th>Patient</th><th>DOB</th><th>Sex</th><th>Tests</th><th>Status</th></tr>
+{% for r in preview %}<tr><td><b>{{r.sample_id}}</b></td><td>{{r.date_received or ''}}</td><td>{{r.date_collected or ''}}</td><td>{{r.clinic_match}}</td><td>{{r.first}} {{r.last}}</td><td>{{r.dob or r.dob_raw}}</td><td>{{r.sex}}</td><td>{{r.tests or '—'}}</td><td class="{% if r.issues=='Ready' %}oktext{% else %}warntext{% endif %}">{{r.issues}}</td></tr>{% endfor %}</table></div></div>{% endif %}
+<div class="card"><h3>Privacy / operational note</h3><p>The uploaded workbook is processed to create orders; this V9.5 package does not contain the patient spreadsheet you supplied. For production PHI, deploy only in your approved HIPAA environment and use your laboratory's validated retention, access-control and audit procedures.</p></div>
+{% endblock %}

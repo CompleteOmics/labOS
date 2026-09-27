@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block body %}
+<div class="page-head"><div><h1>Clinic Management</h1><p>Create clinic organizations and keep provider access separated by clinic while Complete Omics maintains one central laboratory work queue.</p></div></div>
+<div class="grid two">
+<section class="card"><h2>Add clinic</h2><form method="post"><input type="hidden" name="action" value="create">
+<label>Clinic / practice name</label><input name="name" required placeholder="e.g., Harbor Cardiology Associates">
+<label>Clinic code</label><input name="code" placeholder="Optional short code">
+<label>Primary contact</label><input name="contact_name">
+<label>Contact email</label><input name="contact_email" type="email">
+<label>Phone</label><input name="phone">
+<label>Street address</label><input name="address">
+<div class="form-row"><div><label>City</label><input name="city"></div><div><label>State</label><input name="state" maxlength="40"></div></div>
+<button>Create clinic</button></form></section>
+<section class="card"><h2>Import clinic roster</h2><p>Upload CSV or XLSX with <b>clinic_id</b> and <b>clinic_name</b>. Optional <b>hart_cadhs</b> and <b>hart_cve</b> columns accept Yes/No or 1/0. Existing IDs are matched; conflicting names or IDs stop the import. Omit HART columns to leave standing orders unchanged.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="action" value="import"><label for="clinic-roster">Clinic roster</label><input id="clinic-roster" type="file" name="roster" accept=".csv,.xlsx" required><button>Import clinics</button></form><p><a href="{{url_for('clinic_roster_template')}}">Download roster template</a> · <a href="{{url_for('standing_orders')}}">Manage HART standing orders</a></p></section>
+<section class="card"><h2>Access model</h2><p><b>Providers:</b> see orders belonging to their assigned clinic, including orders created by other providers in that clinic.</p><p><b>Complete Omics staff/directors:</b> see the full laboratory queue across clinics.</p><p><b>Share links:</b> can be bound to one clinic so orders submitted from that link are automatically assigned to the correct clinic.</p><div class="clinical-note">Use individual accounts for each physician and staff member. Do not share provider passwords across a practice.</div></section>
+</div>
+<section class="card"><h2>Clinics</h2><table><tr><th>Clinic</th><th>Code</th><th>Contact</th><th>Active providers</th><th>Orders</th><th>Status</th><th></th></tr>{% for r in rows %}<tr><td><b>{{r.clinic.name}}</b><small>{% if r.clinic.city %}{{r.clinic.city}}{% endif %}{% if r.clinic.state %}, {{r.clinic.state}}{% endif %}</small></td><td>{{r.clinic.code or '—'}}</td><td>{{r.clinic.contact_name or '—'}}<small>{{r.clinic.contact_email or ''}}</small></td><td>{{r.providers}}</td><td>{{r.orders}}</td><td><span class="status-pill {{'success' if r.clinic.active else 'neutral'}}">{{'Active' if r.clinic.active else 'Inactive'}}</span></td><td><form method="post"><input type="hidden" name="clinic_id" value="{{r.clinic.id}}"><button class="mini-button {{'danger-outline' if r.clinic.active else ''}}" name="action" value="{{'deactivate' if r.clinic.active else 'activate'}}">{{'Deactivate' if r.clinic.active else 'Activate'}}</button></form></td></tr>{% endfor %}</table></section>
+{% endblock %}

@@ -1,0 +1,28 @@
+# Free test deployment: Render free web service (Docker) + external Neon Postgres.
+services:
+  - type: web
+    name: complete-omics-labos
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: LIS_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false   # paste the Neon connection string in the Render dashboard
+      - key: WEB_CONCURRENCY
+        value: "1"    # free instance has 512 MB RAM
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: REQUIRE_PRIVILEGED_MFA
+        value: "1"
+      - key: IDLE_TIMEOUT_MINUTES
+        value: "20"
+      - key: LOGIN_FAILURE_LIMIT
+        value: "5"
+      - key: LOGIN_LOCKOUT_MINUTES
+        value: "15"
+      - key: AUDIT_RETENTION_YEARS
+        value: "6"

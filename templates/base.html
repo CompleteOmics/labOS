@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Complete Omics LabOS Final 11.1.3</title>
+<link rel="stylesheet" href="{{url_for('static',filename='style.css')}}">
+
+<style>
+.small-action{padding:.42rem .7rem!important;font-size:.82rem!important;white-space:nowrap}
+.mistake-delete-card{border:1px solid #f3b6b6;background:#fff8f8}
+.mistake-delete-card h2{color:#9f1d1d}
+</style>
+</head>
+<body>
+{% if u %}
+<header class="app-header">
+  <div class="header-inner">
+    <a class="brand" href="{{url_for('dashboard')}}" aria-label="Complete Omics LabOS home">
+      <div class="brandmark">CO</div>
+      <div class="brandtext">
+        <b>Complete Omics LabOS</b>
+        <span>Clinical Laboratory Operations</span>
+      </div>
+    </a>
+
+    <nav class="topnav" aria-label="Primary navigation">
+      <a class="nav-direct" href="{{url_for('dashboard')}}">Dashboard</a>
+      <a class="nav-direct" href="{{url_for('orders')}}">Orders</a>
+
+      {% if u.role in ('staff','director','master') %}
+      <div class="nav-group">
+        <button class="nav-trigger" type="button" aria-expanded="false">Laboratory <span class="chevron">⌄</span></button>
+        <div class="nav-menu nav-menu-2col">
+          <div class="nav-column">
+            <div class="nav-heading">Specimen workflow</div>
+            <a href="{{url_for('new_order')}}"><b>New Laboratory Order</b><small>Staff/director internal order entry</small></a>
+            <a href="{{url_for('samples')}}"><b>Samples</b><small>Accessioned specimen registry</small></a>
+            <a href="{{url_for('batches')}}"><b>Batches</b><small>Batch and run organization</small></a>
+            <a href="{{url_for('worksheets')}}"><b>Worksheets</b><small>Electronic run worksheets</small></a>
+            <a href="{{url_for('plates')}}"><b>Plate Maps</b><small>96-well plate layouts</small></a>
+          </div>
+          <div class="nav-column">
+            <div class="nav-heading">Instrumentation</div>
+            <a href="{{url_for('instrument_import')}}"><b>Instrument Import</b><small>Import and reconcile results</small></a>
+            <a href="{{url_for('inventory')}}"><b>Inventory</b><small>Reagents, lots and supplies</small></a>
+            <a href="{{url_for('import_clinic_orders')}}"><b>Clinic Excel Import</b><small>Bulk HART standing-order accessioning</small></a>
+            <a href="{{url_for('standing_orders')}}"><b>Standing Orders</b><small>Clinic defaults for HART-CADhs and HART-CVE</small></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button" aria-expanded="false">Tests &amp; Results <span class="chevron">⌄</span></button>
+        <div class="nav-menu nav-menu-2col">
+          <div class="nav-column">
+            <div class="nav-heading">Test directory</div>
+            <a href="{{url_for('test_catalog')}}"><b>Test Catalog</b><small>Configured orderable tests</small></a>
+            <a href="{{url_for('diagnostics_menu')}}"><b>Diagnostics Menu</b><small>Browse by platform and specialty</small></a>
+            <a href="{{url_for('loinc_mapping')}}"><b>LOINC Mapping</b><small>Standard codes for HL7/FHIR exchange</small></a>
+            <a href="{{url_for('toxicology')}}"><b>Toxicology</b><small>LC-MS/MS toxicology workflow</small></a>
+          </div>
+          <div class="nav-column">
+            <div class="nav-heading">Interpretation</div>
+            <a href="{{url_for('reference_intervals')}}"><b>Reference Intervals</b><small>Normal and critical values</small></a>
+            <a href="{{url_for('calculations')}}"><b>Calculations</b><small>Validated rules and risk models</small></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-trigger" type="button" aria-expanded="false">Quality <span class="chevron">⌄</span></button>
+        <div class="nav-menu">
+          <div class="nav-column">
+            <div class="nav-heading">Quality management</div>
+            <a href="{{url_for('qc')}}"><b>Quality Control</b><small>QC results, charts and rules</small></a>
+            <a href="{{url_for('quality_policies')}}"><b>Quality Policies</b><small>Controlled laboratory policies</small></a>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="nav-group nav-group-right">
+        <button class="nav-trigger" type="button" aria-expanded="false">Account <span class="chevron">⌄</span></button>
+        <div class="nav-menu nav-menu-right">
+          <div class="nav-column">
+            <div class="nav-heading">Account &amp; administration</div>
+            {% if u.role in ('director','master') %}
+            <a href="{{url_for('clinic_admin')}}"><b>Clinic Management</b><small>Clinics, provider groups and access boundaries</small></a>
+            <a href="{{url_for('user_admin')}}"><b>User Management</b><small>Providers, staff, passwords and access</small></a>
+            <a href="{{url_for('share_links')}}"><b>Share Links</b><small>Provider request access</small></a>
+            <a href="{{url_for('audit_log')}}"><b>Audit Log</b><small>Review system activity</small></a>
+            <a href="{{url_for('compliance_center')}}"><b>Security &amp; Compliance</b><small>HIPAA safeguards, risks, BAAs, training and incidents</small></a>
+            <a href="{{url_for('interoperability_center')}}"><b>DxF / QHIO Readiness</b><small>Exchange profile and transaction logging</small></a>
+            <a href="{{url_for('finance_dashboard')}}"><b>Finance & Profitability</b><small>Monthly and YTD revenue, cost and net profit</small></a>
+            <a href="{{url_for('branding_settings')}}"><b>Report Branding</b><small>Upload Word letterhead and configure PDF reports</small></a>
+            {% endif %}
+            <a href="{{url_for('change_password')}}"><b>Change Password</b><small>Update your personal password</small></a>
+            <a href="{{url_for('mfa_settings')}}"><b>Security</b><small>MFA and account protection</small></a>
+            <a class="logout-link" href="{{url_for('logout')}}"><b>Log out</b></a>
+          </div>
+        </div>
+      </div>
+    </nav>
+  </div>
+</header>
+{% endif %}
+<main>
+{% with messages=get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="alert {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
+{% block body %}{% endblock %}
+<div class="footer-note">Complete Omics LabOS Final 11.1.4 · LOINC 2.83 Integrated · HIPAA Security Controls / DxF Interoperability Readiness · Not a certification</div>
+</main>
+<script>
+(function(){
+  const groups=[...document.querySelectorAll('.nav-group')];
+  function closeAll(except){
+    groups.forEach(g=>{ if(g!==except){ g.classList.remove('menu-open'); const b=g.querySelector(':scope > .nav-trigger'); if(b)b.setAttribute('aria-expanded','false'); }});
+  }
+  groups.forEach(g=>{
+    const b=g.querySelector(':scope > .nav-trigger');
+    if(!b) return;
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      const opening=!g.classList.contains('menu-open');
+      closeAll(g);
+      g.classList.toggle('menu-open', opening);
+      b.setAttribute('aria-expanded', opening ? 'true':'false');
+    });
+  });
+  document.addEventListener('click', e=>{ if(!e.target.closest('.nav-group')) closeAll(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeAll(); });
+
+  // Add the session CSRF token to every POST form, including dynamically rendered forms.
+  document.querySelectorAll('form').forEach(f=>{
+    const method=(f.getAttribute('method')||'GET').toUpperCase();
+    if(method==='POST' && !f.querySelector('input[name="_csrf_token"]')){
+      const i=document.createElement('input'); i.type='hidden'; i.name='_csrf_token'; i.value={{ csrf_token|tojson }}; f.appendChild(i);
+    }
+  });
+  window.LABOS_CSRF={{ csrf_token|tojson }};
+})();
+</script>
+</body>
+</html>

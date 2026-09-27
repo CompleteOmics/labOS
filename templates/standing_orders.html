@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% block body %}
+<div class="topline"><div><h1>Clinic Standing Orders</h1><p class="muted">Set the default HART tests for each clinic. During Excel import, an explicit CADhs/CVE value in the spreadsheet overrides these defaults; a blank test field uses the clinic standing order.</p></div><a class="button" href="{{url_for('import_clinic_orders')}}">Import Clinic Excel</a></div>
+<div class="card">
+<table><tr><th>Clinic</th><th>Code</th><th>HART-CADhs</th><th>HART-CVE</th><th>Status</th><th>Notes</th><th>Save</th></tr>
+{% for c in clinics %}{% set so=by_clinic.get(c.id) %}
+<tr><form method="post"><input type="hidden" name="clinic_id" value="{{c.id}}"><td><b>{{c.name}}</b></td><td>{{c.code or '—'}}</td>
+<td><label class="checkline"><input type="checkbox" name="hart_cadhs" {% if so and so.hart_cadhs %}checked{% endif %}> Ordered</label></td>
+<td><label class="checkline"><input type="checkbox" name="hart_cve" {% if so and so.hart_cve %}checked{% endif %}> Ordered</label></td>
+<td><label class="checkline"><input type="checkbox" name="active" {% if not so or so.active %}checked{% endif %}> Active</label></td>
+<td><input name="notes" value="{{so.notes if so else ''}}" placeholder="Optional clinic standing-order note"></td>
+<td><button type="submit">Save</button></td></form></tr>{% endfor %}</table>
+</div>
+<div class="card"><h3>How this works</h3><p>Example: if a clinic is configured for both HART-CADhs and HART-CVE, a future Excel row with blank CADhs/CVE cells will receive both tests. If the spreadsheet explicitly contains CADhs=0 and CVE=1, only HART-CVE is ordered for that row.</p></div>
+{% endblock %}
