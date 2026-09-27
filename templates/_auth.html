@@ -3,9 +3,9 @@
 <body>
 <div class="auth-shell">
   <section class="auth-art">
-    <div style="display:flex;align-items:center;gap:10px"><div class="sb-mark">CO</div><div class="sb-name"><b>Complete Omics</b><span style="color:#8ea3bf;font-size:11.5px">LabOS · Clinical laboratory</span></div></div>
+    <div>{{ wordmark() }}<div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#8b8b95;margin-top:8px;font-weight:600">LabOS</div></div>
     <div>
-      <h2>Every specimen, result and decision — in one place.</h2>
+      <h2>Every specimen, result and decision, in one place.</h2>
       <p>Order intake, accessioning, plate maps, QC and signed reporting for the Complete Omics laboratory and its partner clinics.</p>
       <div class="auth-feats">
         <div>{{ icon('orders') }}<span>Provider ordering with clinic-scoped access and secure share links</span></div>
@@ -17,6 +17,7 @@
   </section>
   <section class="auth-form">
     <div class="auth-card">
+      <div style="margin-bottom:26px" class="auth-mobile-mark">{{ wordmark() }}</div>
       {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<div class="alert {{ cat }}" role="status"><span>{{ msg }}</span></div>{% endfor %}{% endwith %}
       {% block auth_body %}{% endblock %}
     </div>

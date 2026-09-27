@@ -4,7 +4,7 @@
 <form method="post" enctype="multipart/form-data" class="formgrid">
 <label>Excel workbook (.xlsx)<input type="file" name="workbook" accept=".xlsx,.xlsm" required></label>
 <label>Sheet name (optional)<input name="sheet_name" placeholder="Leave blank to auto-detect the order sheet"></label>
-<div class="full"><b>Import mode</b><div class="radio-row"><label><input type="radio" name="mode" value="preview" checked> Preview only — no database changes</label><label><input type="radio" name="mode" value="commit"> Import into LabOS</label></div></div>
+<div class="full"><b>Import mode</b><div class="radio-row"><label><input type="radio" name="mode" value="preview" checked> Preview only (no database changes)</label><label><input type="radio" name="mode" value="commit"> Import into LabOS</label></div></div>
 <div class="full"><button type="submit">Read Workbook</button></div>
 </form>
 <p class="muted">Recognized columns include Order/Sample ID, Date Received, Date Collected, Account ID, Account Name/Clinic, patient name, DOB, Sex, CADhs, CVE, Received By, FedEx tracking and Notes. Duplicate accession/sample IDs are skipped.</p>
@@ -16,6 +16,6 @@
 </div>
 {% endif %}
 {% if preview %}<div class="card"><div class="topline"><h2>Import Preview</h2><small>Showing up to 200 rows</small></div><div class="table-scroll"><table><tr><th>Sample</th><th>Received</th><th>Collected</th><th>Clinic</th><th>Patient</th><th>DOB</th><th>Sex</th><th>Tests</th><th>Status</th></tr>
-{% for r in preview %}<tr><td><b>{{r.sample_id}}</b></td><td>{{r.date_received or ''}}</td><td>{{r.date_collected or ''}}</td><td>{{r.clinic_match}}</td><td>{{r.first}} {{r.last}}</td><td>{{r.dob or r.dob_raw}}</td><td>{{r.sex}}</td><td>{{r.tests or '—'}}</td><td class="{% if r.issues=='Ready' %}oktext{% else %}warntext{% endif %}">{{r.issues}}</td></tr>{% endfor %}</table></div></div>{% endif %}
+{% for r in preview %}<tr><td><b>{{r.sample_id}}</b></td><td>{{r.date_received or ''}}</td><td>{{r.date_collected or ''}}</td><td>{{r.clinic_match}}</td><td>{{r.first}} {{r.last}}</td><td>{{r.dob or r.dob_raw}}</td><td>{{r.sex}}</td><td>{{r.tests or 'N/A'}}</td><td class="{% if r.issues=='Ready' %}oktext{% else %}warntext{% endif %}">{{r.issues}}</td></tr>{% endfor %}</table></div></div>{% endif %}
 <div class="card"><h3>Privacy / operational note</h3><p>The uploaded workbook is processed to create orders; this V9.5 package does not contain the patient spreadsheet you supplied. For production PHI, deploy only in your approved HIPAA environment and use your laboratory's validated retention, access-control and audit procedures.</p></div>
 {% endblock %}

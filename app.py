@@ -557,7 +557,7 @@ class CalculationRule(db.Model):
 # In this revised build the complete configured menu is visible/orderable to providers.
 # The Laboratory Director can still deactivate individual assays from Diagnostics Menu.
 DIAGNOSTIC_MENU = [
-    # Beckman Coulter AU680 — chemistry / proteins / lipids / TDM / drugs of abuse
+    # Beckman Coulter AU680: chemistry / proteins / lipids / TDM / drugs of abuse
     # General & critical care chemistry
     {'code':'AU_ALB','name':'Albumin','platform':'Beckman AU680','category':'General Chemistry','specimen':'Serum/Plasma','unit':'g/dL'},
     {'code':'AU_ALP','name':'Alkaline Phosphatase (ALP)','platform':'Beckman AU680','category':'General Chemistry','specimen':'Serum/Plasma','unit':'U/L'},
@@ -658,7 +658,7 @@ DIAGNOSTIC_MENU = [
     {'code':'ACC_RUBIGG','name':'Rubella IgG','platform':'Beckman Access 2','category':'Infectious Disease','specimen':'Serum','unit':'IU/mL'},
     {'code':'ACC_TOXIGG','name':'Toxoplasma IgG','platform':'Beckman Access 2','category':'Infectious Disease','specimen':'Serum','unit':'IU/mL'},
     {'code':'ACC_TOXIGM','name':'Toxoplasma IgM','platform':'Beckman Access 2','category':'Infectious Disease','specimen':'Serum','unit':'Index'},
-    {'code':'ACC_AFPONTD','name':'AFP — Open Neural Tube Defect','platform':'Beckman Access 2','category':'Reproductive','specimen':'Serum/Amniotic Fluid','unit':'ng/mL'},
+    {'code':'ACC_AFPONTD','name':'AFP, Open Neural Tube Defect','platform':'Beckman Access 2','category':'Reproductive','specimen':'Serum/Amniotic Fluid','unit':'ng/mL'},
     {'code':'ACC_AMH','name':'Anti-Mullerian Hormone (AMH)','platform':'Beckman Access 2','category':'Reproductive','specimen':'Serum/Plasma','unit':'ng/mL'},
     {'code':'ACC_DHEAS','name':'DHEA-S','platform':'Beckman Access 2','category':'Reproductive','specimen':'Serum/Plasma','unit':'ug/dL'},
     {'code':'ACC_FSH','name':'FSH','platform':'Beckman Access 2','category':'Reproductive','specimen':'Serum/Plasma','unit':'mIU/mL'},
@@ -700,23 +700,23 @@ DIAGNOSTIC_MENU = [
     {'code':'XN_RDWSD','name':'RDW-SD','platform':'Sysmex XN-530','category':'RBC Indices','specimen':'Whole Blood','unit':'fL'},
     {'code':'XN_RDWCV','name':'RDW-CV','platform':'Sysmex XN-530','category':'RBC Indices','specimen':'Whole Blood','unit':'%'},
     {'code':'XN_MPV','name':'MPV','platform':'Sysmex XN-530','category':'Platelets','specimen':'Whole Blood','unit':'fL'},
-    {'code':'XN_NEUTABS','name':'Neutrophils — Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
-    {'code':'XN_NEUTP','name':'Neutrophils — %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
-    {'code':'XN_IGABS','name':'Immature Granulocytes — Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
-    {'code':'XN_IGP','name':'Immature Granulocytes — %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
-    {'code':'XN_LYMPHABS','name':'Lymphocytes — Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
-    {'code':'XN_LYMPHP','name':'Lymphocytes — %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
-    {'code':'XN_MONOABS','name':'Monocytes — Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
-    {'code':'XN_MONOP','name':'Monocytes — %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
-    {'code':'XN_EOABS','name':'Eosinophils — Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
-    {'code':'XN_EOP','name':'Eosinophils — %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
-    {'code':'XN_BASOABS','name':'Basophils — Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
-    {'code':'XN_BASOP','name':'Basophils — %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_NEUTABS','name':'Neutrophils, Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_NEUTP','name':'Neutrophils, %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_IGABS','name':'Immature Granulocytes, Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_IGP','name':'Immature Granulocytes, %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_LYMPHABS','name':'Lymphocytes, Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_LYMPHP','name':'Lymphocytes, %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_MONOABS','name':'Monocytes, Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_MONOP','name':'Monocytes, %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_EOABS','name':'Eosinophils, Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_EOP','name':'Eosinophils, %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_BASOABS','name':'Basophils, Absolute','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_BASOP','name':'Basophils, %','platform':'Sysmex XN-530','category':'Differential','specimen':'Whole Blood','unit':'%'},
     # Optional/configuration-dependent XN-L parameters
-    {'code':'XN_NRBCABS','name':'NRBC — Absolute','platform':'Sysmex XN-530','category':'Advanced Hematology','specimen':'Whole Blood','unit':'10^3/uL'},
+    {'code':'XN_NRBCABS','name':'NRBC, Absolute','platform':'Sysmex XN-530','category':'Advanced Hematology','specimen':'Whole Blood','unit':'10^3/uL'},
     {'code':'XN_NRBCL','name':'NRBC / 100 WBC','platform':'Sysmex XN-530','category':'Advanced Hematology','specimen':'Whole Blood','unit':'/100 WBC'},
-    {'code':'XN_RETP','name':'Reticulocytes — %','platform':'Sysmex XN-530','category':'Reticulocytes (if configured)','specimen':'Whole Blood','unit':'%'},
-    {'code':'XN_RETABS','name':'Reticulocytes — Absolute','platform':'Sysmex XN-530','category':'Reticulocytes (if configured)','specimen':'Whole Blood','unit':'10^6/uL'},
+    {'code':'XN_RETP','name':'Reticulocytes, %','platform':'Sysmex XN-530','category':'Reticulocytes (if configured)','specimen':'Whole Blood','unit':'%'},
+    {'code':'XN_RETABS','name':'Reticulocytes, Absolute','platform':'Sysmex XN-530','category':'Reticulocytes (if configured)','specimen':'Whole Blood','unit':'10^6/uL'},
     {'code':'XN_IRF','name':'Immature Reticulocyte Fraction (IRF)','platform':'Sysmex XN-530','category':'Reticulocytes (if configured)','specimen':'Whole Blood','unit':'%'},
     {'code':'XN_RETHE','name':'Reticulocyte Hemoglobin Equivalent (RET-He)','platform':'Sysmex XN-530','category':'Reticulocytes (if configured)','specimen':'Whole Blood','unit':'pg'},
     # Complete Omics urine toxicology LC-MS/MS menu
@@ -757,11 +757,11 @@ DIAGNOSTIC_MENU = [
     {'code':'TOX_PROP','name':'Propoxyphene','platform':'Complete Omics LC-MS/MS Toxicology','category':'Other Drugs','specimen':'Urine','unit':'ng/mL'},
     {'code':'TOX_M3G','name':'Morphine-3-Glucuronide','platform':'Complete Omics LC-MS/MS Toxicology','category':'Hydrolysis Performance Marker','specimen':'Urine','unit':'ng/mL'},
     {'code':'TOX_OXG','name':'Oxazepam Glucuronide','platform':'Complete Omics LC-MS/MS Toxicology','category':'Hydrolysis Performance Marker','specimen':'Urine','unit':'ng/mL'},
-    {'code':'TOX_UCREAT','name':'Urine Creatinine — Specimen Validity','platform':'Complete Omics LC-MS/MS Toxicology','category':'Specimen Validity','specimen':'Urine','unit':'mg/dL'},
+    {'code':'TOX_UCREAT','name':'Urine Creatinine, Specimen Validity','platform':'Complete Omics LC-MS/MS Toxicology','category':'Specimen Validity','specimen':'Urine','unit':'mg/dL'},
     {'code':'TOX_SG','name':'Urine Specific Gravity','platform':'Complete Omics LC-MS/MS Toxicology','category':'Specimen Validity','specimen':'Urine','unit':''},
     {'code':'TOX_PH','name':'Urine pH','platform':'Complete Omics LC-MS/MS Toxicology','category':'Specimen Validity','specimen':'Urine','unit':''},
-    {'code':'TOX_THC_SCREEN','name':'THC Screen — Presumptive','platform':'Complete Omics LC-MS/MS Toxicology','category':'Pre-Screen / Adjunct','specimen':'Urine','unit':'Qualitative'},
-    {'code':'TOX_BAR_SCREEN','name':'Barbiturate Screen — Presumptive','platform':'Complete Omics LC-MS/MS Toxicology','category':'Pre-Screen / Adjunct','specimen':'Urine','unit':'Qualitative'},
+    {'code':'TOX_THC_SCREEN','name':'THC Screen, Presumptive','platform':'Complete Omics LC-MS/MS Toxicology','category':'Pre-Screen / Adjunct','specimen':'Urine','unit':'Qualitative'},
+    {'code':'TOX_BAR_SCREEN','name':'Barbiturate Screen, Presumptive','platform':'Complete Omics LC-MS/MS Toxicology','category':'Pre-Screen / Adjunct','specimen':'Urine','unit':'Qualitative'},
 
 ]
 
@@ -1290,6 +1290,9 @@ def seed():
             db.session.add(Test(code=item['code'],name=item['name'],specimen=item['specimen'],unit=item['unit'],ref_low=None,ref_high=None,method=item['platform'],active=True))
         elif legacy_all_inactive:
             t.active=True
+    # Older installs stored menu names with em dashes ("Neutrophils — Absolute"); normalise to "Neutrophils, Absolute".
+    for t in Test.query.filter(Test.name.contains('—')).all():
+        t.name=t.name.replace(' — ',', ').replace('—',', ')
     db.session.commit()
     # Apply the bundled LOINC v2 mapping to newly seeded tests while preserving later manual edits.
     for t in Test.query.all():

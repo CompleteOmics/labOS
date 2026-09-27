@@ -18,7 +18,7 @@
     <div class="section-head"><div><span class="platform-kicker">METHOD CONTROL</span><h2>Batch Acceptance Review</h2></div><span class="status-pill neutral">Release gate</span></div>
     <form method="post" action="{{url_for('toxicology_batch_review')}}" class="tox-review-form">
       <label>Run name<input name="run_name" placeholder="e.g., TOX-2026-09-21-AM" required></label>
-      <label>Linked LabOS batch<select name="batch_id"><option value="">Not linked</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}} — {{b.name}}</option>{% endfor %}</select></label>
+      <label>Linked LabOS batch<select name="batch_id"><option value="">Not linked</option>{% for b in batches %}<option value="{{b.id}}">{{b.batch_no}} · {{b.name}}</option>{% endfor %}</select></label>
       <div class="check-grid">
         <label><input type="checkbox" name="calibrators_ok"> Calibrators acceptable</label>
         <label><input type="checkbox" name="qc_ok"> QC acceptable</label>
@@ -43,7 +43,7 @@
 <section class="card">
   <div class="section-head"><div><span class="platform-kicker">ANALYTE LIBRARY</span><h2>Complete Omics Urine Toxicology Menu</h2></div><input id="toxSearch" type="search" placeholder="Search analyte or category…" oninput="filterTox()"></div>
   <div class="tox-table-wrap"><table class="tox-table"><thead><tr><th>Analyte</th><th>Category</th><th>Internal standard</th><th>LLOQ</th><th>Reporting cutoff</th><th>ULOQ</th><th>Status</th></tr></thead><tbody>
-  {% for x in menu %}<tr data-search="{{(x.name ~ ' ' ~ x.category ~ ' ' ~ x.code)|lower}}"><td><b>{{x.name}}</b><small>{{x.code}}</small></td><td>{{x.category}}</td><td>{{x.spec.internal_standard if x.spec else '—'}}</td><td>{{x.spec.lloq if x.spec else '—'}}</td><td>{{x.spec.cutoff if x.spec else '—'}}</td><td>{{x.spec.uloq if x.spec else '—'}}</td><td>{% if x.active %}<span class="status-pill success">Orderable</span>{% else %}<span class="status-pill neutral">Configured</span>{% endif %}</td></tr>{% endfor %}
+  {% for x in menu %}<tr data-search="{{(x.name ~ ' ' ~ x.category ~ ' ' ~ x.code)|lower}}"><td><b>{{x.name}}</b><small>{{x.code}}</small></td><td>{{x.category}}</td><td>{{x.spec.internal_standard if x.spec else 'N/A'}}</td><td>{{x.spec.lloq if x.spec else 'N/A'}}</td><td>{{x.spec.cutoff if x.spec else 'N/A'}}</td><td>{{x.spec.uloq if x.spec else 'N/A'}}</td><td>{% if x.active %}<span class="status-pill success">Orderable</span>{% else %}<span class="status-pill neutral">Configured</span>{% endif %}</td></tr>{% endfor %}
   </tbody></table></div>
   <p class="small-note">Quantitative limits are expressed in ng/mL where configured. Hydrolysis-performance and specimen-validity entries are operational controls rather than routine quantitative patient analytes.</p>
 </section>

@@ -52,7 +52,7 @@
           </div></div>
           {% endif %}
           <details class="individual-tests" open>
-            <summary>Individual Tests <span class="muted">— choose one or more</span></summary>
+            <summary>Individual Tests <span class="muted">(choose one or more)</span></summary>
             <div class="compact-test-grid">
             {% for t in group.tests %}
               <label class="compact-test-row order-test-card" data-search="{{(t.name ~ ' ' ~ t.code ~ ' ' ~ group_name ~ ' ' ~ (t.specimen or '') ~ ' ' ~ (t.method or ''))|lower}}">

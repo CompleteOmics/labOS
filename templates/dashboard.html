@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block body %}
 {%- set lab = u.role != 'customer' -%}
-{%- set dot = {'Submitted':'var(--info)','Received':'var(--teal)','Testing':'var(--accent)','Review':'var(--warning)','Released':'var(--success)'} -%}
+{%- set dot = {'Submitted':'var(--faint)','Received':'var(--info)','Testing':'var(--violet)','Review':'var(--warning)','Released':'var(--success)'} -%}
 
 <div class="page-head">
   <div>
@@ -31,7 +31,7 @@
     </div>
   </a>
   <a class="kpi" href="{{ url_for('orders', status='Testing') }}">
-    <div class="kpi-top"><span>In progress</span><span class="kpi-ico teal">{{ icon('sample') }}</span></div>
+    <div class="kpi-top"><span>In progress</span><span class="kpi-ico violet">{{ icon('sample') }}</span></div>
     <div class="kpi-val">{{ stats.in_progress }}</div>
     <div class="kpi-sub">{{ counts.Received }} received · {{ counts.Testing }} testing</div>
   </a>
@@ -42,7 +42,7 @@
   </a>
   <div class="kpi">
     <div class="kpi-top"><span>Median turnaround</span><span class="kpi-ico good">{{ icon('check') }}</span></div>
-    <div class="kpi-val">{% if stats.tat_median is not none %}{% if stats.tat_median < 48 %}{{ '%.1f'|format(stats.tat_median) }}<small style="font-size:14px;font-weight:500"> h</small>{% else %}{{ '%.1f'|format(stats.tat_median/24) }}<small style="font-size:14px;font-weight:500"> d</small>{% endif %}{% else %}—{% endif %}</div>
+    <div class="kpi-val">{% if stats.tat_median is not none %}{% if stats.tat_median < 48 %}{{ '%.1f'|format(stats.tat_median) }}<small style="font-size:14px;font-weight:500"> h</small>{% else %}{{ '%.1f'|format(stats.tat_median/24) }}<small style="font-size:14px;font-weight:500"> d</small>{% endif %}{% else %}N/A{% endif %}</div>
     <div class="kpi-sub">{{ stats.released_30 }} released in last 30 days</div>
   </div>
 </div>
@@ -113,13 +113,13 @@
       <tr><th>Order</th><th>Patient</th><th>Status</th><th>Age</th></tr>
       {% for o in worklist %}
       <tr>
-        <td><a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.order_no }}</a><small>{{ o.requester_organization or o.requester_name or '—' }}</small></td>
+        <td><a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.order_no }}</a><small>{{ o.requester_organization or o.requester_name or 'N/A' }}</small></td>
         <td>{{ o.patient_name }}{% if o.accession_no %}<small>{{ o.accession_no }}</small>{% endif %}</td>
         <td><span class="pill">{{ o.status }}</span></td>
         <td class="{{ 'reject' if o.age_hours > 120 else ('warningtext' if o.age_hours > 72 else '') }}">{% if o.age_hours < 24 %}{{ o.age_hours|round|int }} h{% else %}{{ (o.age_hours/24)|round(1) }} d{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="empty">Nothing open — all caught up.</td></tr>
+      <tr><td colspan="4" class="empty">Nothing open. All caught up.</td></tr>
       {% endfor %}
     </table>
   </div>
@@ -179,7 +179,7 @@
   for(var g=0; g<=4; g++){ var gy=y(g*step); svg += '<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+gy+'" y2="'+gy+'" stroke="var(--line-2)" stroke-width="1"/><text x="'+(P.l-6)+'" y="'+gy+'" text-anchor="end" dominant-baseline="central" font-size="10" fill="var(--faint)">'+(g*step)+'</text>'; }
   data.forEach(function(d,i){
     var x = P.l + i*bw + bw*0.18, w = bw*0.64, top = y(d.n), h = Math.max(d.n?2:0, H-P.b-top);
-    svg += '<rect data-i="'+i+'" x="'+x+'" y="'+(H-P.b-h)+'" width="'+w+'" height="'+h+'" rx="2" fill="'+(i===data.length-1?'var(--teal)':'var(--accent)')+'" opacity="'+(d.n?0.9:0)+'"/>';
+    svg += '<rect data-i="'+i+'" x="'+x+'" y="'+(H-P.b-h)+'" width="'+w+'" height="'+h+'" rx="2" fill="'+(i===data.length-1?'var(--brand)':'var(--ink-2)')+'" opacity="'+(d.n?0.9:0)+'"/>';
     svg += '<rect data-i="'+i+'" x="'+(P.l+i*bw)+'" y="'+P.t+'" width="'+bw+'" height="'+(H-P.t-P.b)+'" fill="transparent"/>';
     if(i%5===0 || i===data.length-1) svg += '<text x="'+(P.l+i*bw+bw/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="var(--faint)">'+d.d+'</text>';
   });

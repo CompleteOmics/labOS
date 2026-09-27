@@ -1,4 +1,4 @@
-{% from '_icons.html' import icon %}
+{% from '_icons.html' import icon, wordmark %}
 {#- Navigation map: (section, audience, [(endpoint, label, icon, keywords)]). audience: all | lab (staff+) | admin (director+) -#}
 {%- set NAV = [
   ('Overview', 'all', [
@@ -63,8 +63,7 @@
 <div class="shell">
   <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
     <a class="sb-brand" href="{{ url_for('dashboard') }}">
-      <div class="sb-mark">CO</div>
-      <div class="sb-name"><b>Complete Omics</b><span>LabOS · Clinical laboratory</span></div>
+      <div>{{ wordmark() }}<span class="sb-tag">LabOS</span></div>
     </a>
     <nav class="sb-nav">
       {% for sec, aud, items in NAV %}{% if aud=='all' or (aud=='lab' and u.role in ('staff','director','master')) or (aud=='admin' and u.role in ('director','master')) %}
@@ -120,7 +119,7 @@
 </div>
 {% else %}
 <body class="public-shell">
-<div class="public-top"><div class="sb-mark">CO</div><div class="sb-name"><b>Complete Omics</b><span>Clinical laboratory</span></div></div>
+<div class="public-top">{{ wordmark() }}</div>
 <main>
   {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<div class="alert {{ cat }}" role="status"><span>{{ msg }}</span></div>{% endfor %}{% endwith %}
   {% block public_body %}{{ self.body() }}{% endblock %}

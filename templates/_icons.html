@@ -47,3 +47,8 @@
 {%- endif -%}
 </svg>
 {%- endmacro %}
+
+{# Complete Omics wordmark: lowercase "complete omics" with the red drop as the "o". Text uses currentColor. #}
+{% macro wordmark() -%}
+<span class="wordmark" role="img" aria-label="Complete Omics">complete<span class="wm-sp"></span><svg viewBox="0 0 20 28" aria-hidden="true"><path d="M10 0.5C10 0.5 1.2 11.2 1.2 18.2a8.8 8.8 0 0 0 17.6 0C18.8 11.2 10 0.5 10 0.5Z"/></svg>mics</span>
+{%- endmacro %}

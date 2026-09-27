@@ -37,10 +37,10 @@
     <tr>
       <td><a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.order_no }}</a></td>
       <td>{{ o.patient_name }}{% if o.patient_mrn %}<small>MRN {{ o.patient_mrn }}</small>{% endif %}</td>
-      <td>{{ o.requester_name or '—' }}<small>{{ o.requester_organization or o.requester_email or '' }}</small></td>
+      <td>{{ o.requester_name or 'N/A' }}<small>{{ o.requester_organization or o.requester_email or '' }}</small></td>
       <td>{{ o.payment_type or 'Insurance' }}<small>{{ o.billing_status or 'Not billed' }}</small></td>
       <td><span class="pill">{{ o.status }}</span></td>
-      <td>{{ o.accession_no or '—' }}</td>
+      <td>{{ o.accession_no or 'N/A' }}</td>
       <td data-sort="{{ o.created_at.isoformat() if o.created_at }}">{{ fmt_dt(o.created_at) }}</td>
     </tr>
     {% endfor %}

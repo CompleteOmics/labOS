@@ -3,7 +3,7 @@
 <div class="card">
 <table><tr><th>Clinic</th><th>Code</th><th>HART-CADhs</th><th>HART-CVE</th><th>Status</th><th>Notes</th><th>Save</th></tr>
 {% for c in clinics %}{% set so=by_clinic.get(c.id) %}
-<tr><form method="post"><input type="hidden" name="clinic_id" value="{{c.id}}"><td><b>{{c.name}}</b></td><td>{{c.code or '—'}}</td>
+<tr><form method="post"><input type="hidden" name="clinic_id" value="{{c.id}}"><td><b>{{c.name}}</b></td><td>{{c.code or 'N/A'}}</td>
 <td><label class="checkline"><input type="checkbox" name="hart_cadhs" {% if so and so.hart_cadhs %}checked{% endif %}> Ordered</label></td>
 <td><label class="checkline"><input type="checkbox" name="hart_cve" {% if so and so.hart_cve %}checked{% endif %}> Ordered</label></td>
 <td><label class="checkline"><input type="checkbox" name="active" {% if not so or so.active %}checked{% endif %}> Active</label></td>
