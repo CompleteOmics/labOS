@@ -9,11 +9,12 @@ from reportlab.lib.units import inch
 from reportlab.graphics.barcode import code128
 from reportlab.lib.utils import ImageReader
 from markupsafe import Markup
-import os, io, csv, secrets, math, json, ast, operator, string, re, zipfile, shutil, tempfile, hashlib
+import os, io, csv, secrets, math, json, ast, operator, string, re, zipfile, shutil, tempfile, hashlib, threading
+from werkzeug.exceptions import HTTPException
 from openpyxl import load_workbook
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LABOS_VERSION = '12.0'
+LABOS_VERSION = '12.1'
 BRANDING_DIR = os.path.join(BASE_DIR, 'branding')
 os.makedirs(BRANDING_DIR, exist_ok=True)
 DEFAULT_LOGO = os.path.join(BASE_DIR, 'static', 'complete_omics_logo.png')
@@ -1307,21 +1308,55 @@ def seed():
         if not (t.loinc_version or '').strip(): t.loinc_version=LOINC_VERSION
     db.session.commit()
     get_branding()
+    seed_quality_policies()
 
+
+DEFAULT_QC_POLICIES = [
+    ('WG_12S','Westgard 1-2s warning','One control result beyond 2 SD. Warning: inspect before accepting the run.','Warning',None),
+    ('WG_13S','Westgard 1-3s reject','One control result beyond 3 SD. Reject the run.','Reject',None),
+    ('WG_22S','Westgard 2-2s reject','Two consecutive control results beyond 2 SD on the same side of the mean.','Reject',None),
+    ('WG_R4S','Westgard R-4s reject','Range between consecutive control results exceeds 4 SD.','Reject',None),
+    ('WG_41S','Westgard 4-1s reject','Four consecutive control results beyond 1 SD on the same side of the mean.','Reject',None),
+    ('WG_10X','Westgard 10x reject','Ten consecutive control results on the same side of the mean.','Reject',None),
+    ('CRITICAL','Critical value hold','Hold patient results that fall outside the critical low/high limits for director review.','Hold',None),
+    ('QC_BLOCK','Failed QC blocks release','Hold patient results when the latest QC for that assay was rejected.','Hold',None),
+    ('DELTA','Delta check','Hold results that differ from the patient\'s previous result by more than the configured percentage.','Hold',json.dumps({'percent':50})),
+]
+
+def seed_quality_policies():
+    # Only adds missing policies, so a director's enable/disable choices are preserved.
+    existing={p.code for p in QCPolicy.query.all()}
+    for code,name,desc,severity,config in DEFAULT_QC_POLICIES:
+        if code not in existing:
+            db.session.add(QCPolicy(code=code,name=name,description=desc,enabled=True,severity=severity,config_json=config,source_note='LabOS default'))
+    db.session.commit()
+
+
+_AUDIT_LOCK=threading.Lock()
+_AUDIT_PG_LOCK_KEY=724501  # arbitrary constant for pg_advisory_xact_lock
 
 def audit(action, entity, entity_id=None, details='', user_id=None):
-    last=Audit.query.order_by(Audit.id.desc()).first()
-    prev=(last.record_hash if last and last.record_hash else 'GENESIS')
-    row=Audit(user_id=user_id if user_id is not None else session.get('user_id'), action=action, entity=entity, entity_id=entity_id, details=details, prev_hash=prev)
-    db.session.add(row); db.session.flush()
-    payload=f'{prev}|{row.id}|{row.user_id}|{row.action}|{row.entity}|{row.entity_id}|{row.details or ""}|{_audit_timestamp(row.created_at)}'
-    row.record_hash=hashlib.sha256(payload.encode('utf-8')).hexdigest()
-    db.session.commit()
+    # Each row hashes the previous row, so writers must be serialised: a thread lock covers
+    # gunicorn threads, and a transaction-scoped advisory lock covers multiple worker processes.
+    if user_id is None:
+        try: user_id=session.get('user_id')
+        except RuntimeError: user_id=None
+    with _AUDIT_LOCK:
+        if db.engine.dialect.name=='postgresql':
+            db.session.execute(db.text('SELECT pg_advisory_xact_lock(:k)'),{'k':_AUDIT_PG_LOCK_KEY})
+        last=Audit.query.order_by(Audit.id.desc()).first()
+        prev=(last.record_hash if last and last.record_hash else 'GENESIS')
+        row=Audit(user_id=user_id, action=action, entity=entity, entity_id=entity_id, details=details, prev_hash=prev)
+        db.session.add(row); db.session.flush()
+        payload=f'{prev}|{row.id}|{row.user_id}|{row.action}|{row.entity}|{row.entity_id}|{row.details or ""}|{_audit_timestamp(row.created_at)}'
+        row.record_hash=hashlib.sha256(payload.encode('utf-8')).hexdigest()
+        db.session.commit()
 
 
 def current_user():
     uid = session.get('user_id')
-    return db.session.get(User, uid) if uid else None
+    u = db.session.get(User, uid) if uid else None
+    return u if (u and u.active) else None
 
 
 def require_login():
@@ -1588,6 +1623,51 @@ def security_headers(resp):
         resp.headers.setdefault('Strict-Transport-Security','max-age=31536000; includeSubDomains')
     return resp
 
+ERROR_COPY={
+    400:('That request could not be processed','Some of the values entered are not valid. Go back, check the form and try again.'),
+    401:('Please sign in','Your session has ended. Sign in to continue.'),
+    403:('You do not have access to this page','Your account role does not include this area of LabOS. Ask an administrator if you need access.'),
+    404:('Page not found','The page or record you asked for does not exist, or it has been removed.'),
+    405:('That action is not allowed here','Go back and use the buttons on the page.'),
+    410:('This link is no longer active','The link has expired or been disabled. Contact the laboratory for a new one.'),
+    413:('File too large','Choose a smaller file and try again.'),
+    429:('Too many attempts','Wait a few minutes and try again.'),
+    500:('Something went wrong','The error has been logged. Go back and try again; if it keeps happening, contact your LabOS administrator.'),
+}
+
+def render_error(code, detail=None):
+    title,body=ERROR_COPY.get(code,ERROR_COPY[500])
+    if code==400 and detail and 'Security token' in str(detail):
+        title,body='Your form expired','For security, forms expire after a while. Go back, reload the page and submit again.'
+    try: u=current_user()
+    except Exception: u=None
+    return render_template('error.html',u=u,code=code,title=title,body=body), code
+
+@app.errorhandler(HTTPException)
+def handle_http_error(e):
+    if e.code in (301,302,303,307,308) or e.code is None:
+        return e
+    if e.code==401 and request.method=='GET':
+        return redirect(url_for('login'))
+    return render_error(e.code, getattr(e,'description',None))
+
+@app.errorhandler(ValueError)
+def handle_bad_value(e):
+    # Malformed numbers/IDs in submitted forms: report a clear 400 instead of a server error.
+    db.session.rollback()
+    app.logger.warning('Rejected malformed input on %s: %s', request.path, e)
+    return render_error(400)
+
+@app.errorhandler(Exception)
+def handle_unexpected(e):
+    if isinstance(e,HTTPException):
+        return handle_http_error(e)
+    db.session.rollback()
+    app.logger.exception('Unhandled error on %s', request.path)
+    if app.config.get('TESTING'):
+        raise e
+    return render_error(500)
+
 @app.route('/health')
 def health():
     return {'status':'ok','service':'Complete Omics LabOS '+LABOS_VERSION,'public_links':'enabled'}, 200
@@ -1648,6 +1728,32 @@ def security_request_controls():
                     return redirect(url_for('login'))
             except Exception: pass
         session['_last_activity']=now.isoformat()
+
+# Endpoints a signed-in user may reach while an account requirement (MFA enrolment or a
+# password change) is still outstanding.
+ACCOUNT_SETUP_ENDPOINTS = {'mfa_settings','change_password','logout','static','health','public_link_check'}
+
+@app.before_request
+def enforce_account_requirements():
+    uid=session.get('user_id')
+    if not uid or request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    u=db.session.get(User,uid)
+    if not u or not u.active:
+        # Deactivated, archived or deleted while signed in: end the session immediately.
+        session.clear()
+        flash('Your account is no longer active. Contact your LabOS administrator.','danger')
+        return redirect(url_for('login'))
+    if request.endpoint in ACCOUNT_SETUP_ENDPOINTS:
+        return None
+    if app.config.get('REQUIRE_PRIVILEGED_MFA') and u.role in ('director','master') and not u.mfa_enabled:
+        if request.method!='GET': abort(403)
+        flash('Set up two-factor sign-in to continue. It is required for director and administrator accounts.','warning')
+        return redirect(url_for('mfa_settings'))
+    if u.must_change_password:
+        if request.method!='GET': abort(403)
+        flash('Choose a new password to finish signing in.','warning')
+        return redirect(url_for('change_password'))
 
 @app.route('/setup',methods=['GET','POST'])
 def setup():
@@ -1760,6 +1866,8 @@ def change_password():
             flash('Current password is incorrect.','danger')
         elif new1!=new2:
             flash('New passwords do not match.','danger')
+        elif check_password_hash(u.password_hash,new1):
+            flash('Choose a password different from your current or temporary password.','danger')
         elif len(new1)<10 or not any(c.isalpha() for c in new1) or not any(c.isdigit() for c in new1):
             flash('Use at least 10 characters with both letters and numbers.','danger')
         else:
@@ -2405,9 +2513,17 @@ def new_order():
     internal_order = u.role in ('staff','director','master')
     if request.method=='POST':
         selected=request.form.getlist('tests')
+        active_ids={str(t.id) for t in tests}
+        error=None
         if not selected:
-            flash('Select at least one test.','danger')
-            return render_template('new_order.html',u=u,tests=tests,provider_menu=provider_ordering_menu(tests),internal_order=internal_order)
+            error='Select at least one test.'
+        elif not set(selected).issubset(active_ids):
+            error='One or more selected tests are not available for ordering.'
+        elif not (request.form.get('patient_name') or '').strip():
+            error='Enter the patient name.'
+        if error:
+            flash(error,'danger')
+            return render_template('new_order.html',u=u,tests=tests,provider_menu=provider_ordering_menu(tests),internal_order=internal_order),400
         source='internal-laboratory-order' if internal_order else 'authenticated-provider'
         o=create_order(selected,customer_user=u,source=source)
         if internal_order:
@@ -2515,6 +2631,34 @@ def toggle_share_link(link_id):
     link=db.session.get(ShareLink,link_id) or abort(404)
     link.active=not link.active;db.session.commit();audit('TOGGLE','share_link',link.id,f'active={link.active}')
     return redirect(url_for('share_links'))
+
+ORDER_STAGE_FROM={'receive':('Submitted',),'testing':('Received',),'save_results':('Received','Testing','Review'),'approve':('Review',)}
+
+def stage_allows(o, action):
+    return o.status in ORDER_STAGE_FROM.get(action,())
+
+def results_complete(o):
+    rows=OrderTest.query.filter_by(order_id=o.id).all()
+    return bool(rows) and all((r.result or '').strip() for r in rows)
+
+def record_result(o, rr, raw_value, u, status):
+    """Store one result with its reference flag and autoverification decision (manual entry and instrument import)."""
+    t=db.session.get(Test,rr.test_id)
+    val=('' if raw_value is None else str(raw_value)).strip()
+    flag=''; num=None
+    try: num=float(val)
+    except ValueError: pass
+    if num is not None and t:
+        flag=toxicology_interpret(t.code,num) or apply_reference(o,t,rr,num)
+    rr.result=val or None; rr.result_flag=flag
+    rr.result_status=status if val else 'Pending'
+    rr.entered_by=u.id if val else rr.entered_by; rr.entered_at=utcnow() if val else rr.entered_at
+    if num is not None and t and t.code.upper() in ('CREAT','CREATININE','AU_CREAT','CREA','CRE'):
+        o.serum_creatinine_mg_dl=num; update_order_calculated_demographics(o)
+    AutoVerificationEvent.query.filter_by(order_test_id=rr.id).delete()
+    if num is not None and t:
+        decision,checks=autoverification_checks(o,t,rr,num)
+        db.session.add(AutoVerificationEvent(order_id=o.id,order_test_id=rr.id,test_id=t.id,decision=decision,checks_json=json.dumps(checks)))
 
 def order_provider_editable(o):
     """Provider corrections are allowed only before accession/receipt/testing."""
@@ -2648,9 +2792,9 @@ def order_detail(order_id):
             o.other_cost=money(request.form.get('other_cost'))
             o.free_reason=(request.form.get('free_reason') or '').strip() or None
             if request.form.get('performed_by_user_id'):
-                o.performed_by_user_id=int(request.form['performed_by_user_id'])
+                o.performed_by_user_id=(db.session.get(User,int(request.form['performed_by_user_id'])) or abort(400)).id
             if request.form.get('director_user_id') and is_director(u):
-                o.director_user_id=int(request.form['director_user_id'])
+                o.director_user_id=(db.session.get(User,int(request.form['director_user_id'])) or abort(400)).id
             if o.payment_type=='Charity/Free':
                 if is_director(u):
                     o.charity_approved=request.form.get('charity_approved')=='1'
@@ -2658,6 +2802,8 @@ def order_detail(order_id):
                 o.charity_approved=False
             db.session.commit();audit('BILLING_UPDATE','order',o.id,f'{o.payment_type}; {o.billing_status}')
             flash('Billing and financial details updated.','success')
+        elif action in ('receive','testing','save_results','approve') and not stage_allows(o,action):
+            flash(f'That step is not available while the order is {o.status}.','danger')
         elif action=='receive':
             o.accession_no='CO-'+utcnow().strftime('%y%m%d')+'-'+str(o.id).zfill(5);o.sample_received_at=utcnow();o.status='Received'
             if not Sample.query.filter_by(order_id=o.id).first():
@@ -2669,24 +2815,16 @@ def order_detail(order_id):
         elif action=='testing':
             o.status='Testing';db.session.commit();audit('STATUS','order',o.id,'Testing')
         elif action=='save_results':
-            rows=OrderTest.query.filter_by(order_id=o.id).all()
-            for rr in rows:
-                t=db.session.get(Test,rr.test_id);val=request.form.get(f'result_{rr.id}','').strip();flag=''
-                try:
-                    num=float(val)
-                    flag=toxicology_interpret(t.code,num) or apply_reference(o,t,rr,num)
-                except ValueError: pass
-                rr.result=val;rr.result_flag=flag;rr.result_status='Entered';rr.entered_by=u.id;rr.entered_at=utcnow()
-                if t and t.code.upper() in ('CREAT','CREATININE','AU_CREAT','CREA','CRE'):
-                    try:o.serum_creatinine_mg_dl=float(val);update_order_calculated_demographics(o)
-                    except ValueError:pass
-                AutoVerificationEvent.query.filter_by(order_test_id=rr.id).delete()
-                try:
-                    num=float(val); decision,checks=autoverification_checks(o,t,rr,num)
-                    db.session.add(AutoVerificationEvent(order_id=o.id,order_test_id=rr.id,test_id=t.id,decision=decision,checks_json=json.dumps(checks)))
-                except ValueError: pass
+            for rr in OrderTest.query.filter_by(order_id=o.id).all():
+                record_result(o,rr,request.form.get(f'result_{rr.id}',''),u,'Entered')
             calc_changed=run_calculations(o,u.id)
-            o.status='Review';db.session.commit();audit('RESULTS_ENTERED','order',o.id,'Calculated: '+','.join(calc_changed))
+            complete=results_complete(o)
+            o.status='Review' if complete else 'Testing'
+            db.session.commit();audit('RESULTS_ENTERED','order',o.id,f'complete={complete}; calculated='+','.join(calc_changed))
+            if not complete:
+                flash('Results saved. The order moves to director review once every test has a result.','warning')
+        elif action=='approve' and is_director(u) and not results_complete(o):
+            flash('Every test needs a result before the report can be released.','danger')
         elif action=='approve' and is_director(u):
             holds=AutoVerificationEvent.query.filter_by(order_id=o.id,decision='Hold').all()
             override=(request.form.get('override_reason') or '').strip()
@@ -3170,12 +3308,11 @@ def instrument_import():
                 if not o or not t: errors.append(f'{accession}/{code}');continue
                 ot=OrderTest.query.filter_by(order_id=o.id,test_id=t.id).first()
                 if not ot: errors.append(f'{accession}/{code} not ordered');continue
-                val=str(result).strip();flag=''
-                try: flag=apply_reference(o,t,ot,float(val))
-                except Exception: pass
-                ot.result=val;ot.result_flag=flag;ot.result_status='Imported';ot.entered_by=u.id;ot.entered_at=utcnow();updated+=1;touched.add(o.id)
+                if not stage_allows(o,'save_results'): errors.append(f'{accession}/{code} order is {o.status}');continue
+                if result is None or not str(result).strip(): errors.append(f'{accession}/{code} empty result');continue
+                record_result(o,ot,result,u,'Imported');updated+=1;touched.add(o.id)
             for oid in touched:
-                o=db.session.get(Order,oid);run_calculations(o,u.id);o.status='Review'
+                o=db.session.get(Order,oid);run_calculations(o,u.id);o.status='Review' if results_complete(o) else 'Testing'
             db.session.commit();audit('IMPORT','instrument_results',None,f'updated={updated}; errors={len(errors)}')
             flash(f'Imported {updated} result(s).'+(f' {len(errors)} row(s) could not be matched.' if errors else ''),'success')
         except Exception as e:
@@ -3486,6 +3623,8 @@ def sample_label(sample_id):
     c.save();bio.seek(0)
     return send_file(bio,mimetype='application/pdf',as_attachment=True,download_name=f'{samp.sample_no}_barcode.pdf')
 
+BATCH_STATUSES=('Open','In Progress','Review','Completed','Rejected')
+
 @app.route('/batches',methods=['GET','POST'])
 def batches():
     role_required('staff','director');u=current_user()
@@ -3517,8 +3656,10 @@ def batch_detail(batch_id):
             return redirect(url_for('batches'))
         if action=='add_sample':
             sid=int(request.form['sample_id'])
+            if not db.session.get(Sample,sid): abort(400)
             if not BatchSample.query.filter_by(batch_id=b.id,sample_id=sid).first(): db.session.add(BatchSample(batch_id=b.id,sample_id=sid,position=request.form.get('position')))
         elif action=='status':
+            if request.form.get('status','Open') not in BATCH_STATUSES: abort(400)
             b.status=request.form.get('status','Open'); b.run_at=utcnow() if b.status=='Completed' else b.run_at
         db.session.commit();audit('UPDATE','batch',b.id,action);return redirect(url_for('batch_detail',batch_id=b.id))
     links=BatchSample.query.filter_by(batch_id=b.id).all();assigned=[]
@@ -3531,6 +3672,7 @@ def batch_detail(batch_id):
 def worksheets():
     role_required('staff','director');u=current_user()
     if request.method=='POST':
+        if request.form.get('batch_id') and not db.session.get(Batch,int(request.form['batch_id'])): abort(400)
         w=Worksheet(title=request.form['title'].strip(),batch_id=int(request.form['batch_id']) if request.form.get('batch_id') else None,created_by=u.id,notes=request.form.get('notes'))
         db.session.add(w);db.session.commit();audit('CREATE','worksheet',w.id,w.title);return redirect(url_for('worksheet_detail',worksheet_id=w.id))
     return render_template('worksheets.html',u=u,worksheets=Worksheet.query.order_by(Worksheet.id.desc()).all(),batches=Batch.query.order_by(Batch.id.desc()).all())
@@ -3559,6 +3701,7 @@ def worksheet_detail(worksheet_id):
 def plates():
     role_required('staff','director');u=current_user()
     if request.method=='POST':
+        if request.form.get('batch_id') and not db.session.get(Batch,int(request.form['batch_id'])): abort(400)
         p=PlateMap(name=request.form['name'].strip(),batch_id=int(request.form['batch_id']) if request.form.get('batch_id') else None,plate_format=96,created_by=u.id)
         db.session.add(p);db.session.commit();audit('CREATE','plate_map',p.id,p.name);return redirect(url_for('plate_detail',plate_id=p.id))
     return render_template('plates.html',u=u,plates=PlateMap.query.order_by(PlateMap.id.desc()).all(),batches=Batch.query.order_by(Batch.id.desc()).all())
@@ -3597,10 +3740,13 @@ def qc():
     if request.method=='POST':
         action=request.form.get('action')
         if action=='definition' and is_director(u):
+            if float(request.form['target_sd'])<=0 or not db.session.get(Test,int(request.form['test_id'])):
+                flash('Target SD must be greater than zero and the test must exist.','danger');return redirect(url_for('qc'))
             q=QCDefinition(name=request.form['name'],test_id=int(request.form['test_id']),level=request.form['level'],target_mean=float(request.form['target_mean']),target_sd=float(request.form['target_sd']),lot=request.form.get('lot'))
             db.session.add(q);db.session.commit();audit('CREATE','qc_definition',q.id,q.name)
         elif action=='result':
             qd=db.session.get(QCDefinition,int(request.form['qc_definition_id'])) or abort(404);value=float(request.form['value'])
+            if request.form.get('batch_id') and not db.session.get(Batch,int(request.form['batch_id'])): abort(400)
             history=QCResult.query.filter_by(qc_definition_id=qd.id).order_by(QCResult.id.desc()).limit(12).all()
             z,flag,status=westgard_flag(value,qd.target_mean,qd.target_sd,history)
             qr=QCResult(qc_definition_id=qd.id,batch_id=int(request.form['batch_id']) if request.form.get('batch_id') else None,value=value,z_score=z,rule_flag=flag,status=status,entered_by=u.id)

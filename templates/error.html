@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} · Complete Omics LabOS{% endblock %}
+{% block body %}
+<div class="card" style="max-width:620px;margin:40px auto;text-align:center;padding:36px 28px">
+  <div class="kpi-ico" style="margin:0 auto 14px;width:44px;height:44px;border-radius:12px">{{ icon('alert') }}</div>
+  <p class="mini" style="margin:0 0 4px;letter-spacing:.08em;text-transform:uppercase">Error {{ code }}</p>
+  <h1 style="margin-bottom:8px">{{ title }}</h1>
+  <p class="muted" style="max-width:440px;margin:0 auto 20px">{{ body }}</p>
+  <div class="btn-row" style="justify-content:center">
+    <a class="button secondary" href="javascript:history.back()">Go back</a>
+    <a class="button" href="{{ url_for('dashboard') if u else url_for('login') }}">{{ 'Dashboard' if u else 'Sign in' }}</a>
+  </div>
+</div>
+{% endblock %}

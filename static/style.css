@@ -543,7 +543,8 @@ summary.mini-button::-webkit-details-marker{display:none}
 .dot.warningtext{background:#c18514}
 .dot.reject{background:#bd3440}
 .policy{border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:10px;background:var(--surface)}
-.policy-head{display:flex;justify-content:space-between;gap:12px}
+.policy-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.policy-head .pill{flex:0 0 auto}
 
 /* ---------- Public request pages ---------- */
 .public-wrap{max-width:980px;margin:10px auto}

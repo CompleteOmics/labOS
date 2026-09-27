@@ -6,3 +6,7 @@ lis_v7.db
 .labos_secret
 .env
 *.bat
+tests/
+.github/
+pytest.ini
+requirements-dev.txt
