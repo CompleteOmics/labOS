@@ -12,7 +12,7 @@ import os, io, csv, secrets, math, json, ast, operator, string, re, zipfile, shu
 from openpyxl import load_workbook
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LABOS_VERSION = 'Final 11.1.7 Clinic CSV Encoding Fix'
+LABOS_VERSION = '12.0'
 BRANDING_DIR = os.path.join(BASE_DIR, 'branding')
 os.makedirs(BRANDING_DIR, exist_ok=True)
 DEFAULT_LOGO = os.path.join(BASE_DIR, 'static', 'complete_omics_logo.png')
@@ -1586,7 +1586,7 @@ def security_headers(resp):
 
 @app.route('/health')
 def health():
-    return {'status':'ok','service':'Complete Omics LabOS Final 11.1.6','public_links':'enabled'}, 200
+    return {'status':'ok','service':'Complete Omics LabOS '+LABOS_VERSION,'public_links':'enabled'}, 200
 
 # Routes in this set intentionally do not require an LIS account.  They are protected
 # by the unguessable ShareLink token and by link active/expiration checks.
@@ -1607,7 +1607,7 @@ def public_link_check():
     return {
         'status':'ok',
         'message':'This endpoint is public and does not require an LIS login.',
-        'service':'Complete Omics LabOS Final 11.1.6'
+        'service':'Complete Omics LabOS '+LABOS_VERSION
     }, 200
 
 @app.before_request
@@ -2014,14 +2014,42 @@ def dashboard():
     if r:return r
     u=current_user()
     statuses=['Submitted','Received','Testing','Review','Released']
-    if u.role=='customer':
-        q=provider_order_query(u)
-        counts={s:q.filter(Order.status==s).count() for s in statuses}
-        recent=q.order_by(Order.id.desc()).limit(10).all()
-        quality={}
-    else:
-        counts={s:Order.query.filter_by(status=s).count() for s in statuses}
-        recent=Order.query.order_by(Order.id.desc()).limit(12).all()
+    lab=u.role!='customer'
+    base=Order.query if lab else provider_order_query(u)
+    counts={s:base.filter(Order.status==s).count() for s in statuses}
+    now=utcnow()
+    def aware(d):
+        return d.replace(tzinfo=timezone.utc) if d and d.tzinfo is None else d
+    day0=now.replace(hour=0,minute=0,second=0,microsecond=0)
+    window=base.filter(Order.created_at>=day0-timedelta(days=60)).all()
+    created=[aware(o.created_at) for o in window if o.created_at]
+    # 30-day daily order volume for the chart
+    volume=[]
+    for k in range(29,-1,-1):
+        d0=day0-timedelta(days=k); d1=d0+timedelta(days=1)
+        volume.append({'d':d0.strftime('%b %d'),'n':sum(1 for c in created if d0<=c<d1)})
+    week=sum(1 for c in created if c>=day0-timedelta(days=6))
+    prev_week=sum(1 for c in created if day0-timedelta(days=13)<=c<day0-timedelta(days=6))
+    today=sum(1 for c in created if c>=day0)
+    # Turnaround: order creation -> last approved result, for orders released in the last 30 days
+    tat=[]
+    released_30=0
+    for o in window:
+        if o.status!='Released' or not o.created_at: continue
+        last=db.session.query(db.func.max(OrderTest.approved_at)).filter(OrderTest.order_id==o.id).scalar()
+        last=aware(last)
+        if last and last>=now-timedelta(days=30):
+            released_30+=1
+            tat.append((last-aware(o.created_at)).total_seconds()/3600)
+    tat.sort()
+    tat_median=(tat[len(tat)//2] if len(tat)%2 else (tat[len(tat)//2-1]+tat[len(tat)//2])/2) if tat else None
+    # Worklist: open orders, oldest first
+    worklist=base.filter(Order.status.in_(['Submitted','Received','Testing','Review'])).order_by(Order.created_at.asc()).limit(8).all()
+    for o in worklist:
+        o.age_hours=(now-aware(o.created_at)).total_seconds()/3600 if o.created_at else 0
+    recent=base.order_by(Order.id.desc()).limit(8).all()
+    quality={}; activity=[]
+    if lab:
         recent_qc=QCResult.query.order_by(QCResult.id.desc()).limit(100).all()
         quality={
             'qc_rejects': sum(1 for x in recent_qc if x.status=='Reject'),
@@ -2029,8 +2057,15 @@ def dashboard():
             'qc_total': len(recent_qc),
             'av_holds': AutoVerificationEvent.query.filter_by(decision='Hold').count(),
             'open_batches': Batch.query.filter_by(status='Open').count(),
+            'samples_today': Sample.query.filter(Sample.received_at>=day0).count(),
         }
-    return render_template('dashboard.html',u=u,counts=counts,recent=recent,quality=quality)
+        quality['qc_accepts']=quality['qc_total']-quality['qc_rejects']-quality['qc_warnings']
+        rows=Audit.query.order_by(Audit.id.desc()).limit(8).all()
+        names={x.id:x.name for x in User.query.filter(User.id.in_({a.user_id for a in rows if a.user_id})).all()} if rows else {}
+        activity=[{'who':names.get(a.user_id,'System'),'action':' '.join(w if w in ('PHI','QC','MFA','CSV','PDF','HL7','FHIR','LOINC','BAA') else w.capitalize() for w in (a.action or '').split('_')),'entity':a.entity,'entity_id':a.entity_id,'at':a.created_at} for a in rows]
+    stats={'today':today,'week':week,'prev_week':prev_week,'released_30':released_30,'tat_median':tat_median,
+           'in_progress':counts['Received']+counts['Testing'],'open':sum(counts[s] for s in statuses[:4])}
+    return render_template('dashboard.html',u=u,counts=counts,recent=recent,quality=quality,stats=stats,volume=volume,worklist=worklist,activity=activity,now=now)
 
 
 
@@ -2299,8 +2334,18 @@ def orders():
     r=require_login()
     if r:return r
     u=current_user()
-    rows=provider_order_query(u).order_by(Order.id.desc()).all()
-    return render_template('orders.html',u=u,orders=rows)
+    q=provider_order_query(u)
+    term=(request.args.get('q') or '').strip()
+    status=(request.args.get('status') or '').strip()
+    if term:
+        like=f'%{term}%'
+        q=q.filter(db.or_(Order.order_no.ilike(like),Order.patient_name.ilike(like),Order.patient_mrn.ilike(like),
+                          Order.accession_no.ilike(like),Order.requester_name.ilike(like),Order.requester_organization.ilike(like)))
+    all_counts=dict(db.session.query(Order.status,db.func.count(Order.id)).filter(Order.id.in_(provider_order_query(u).with_entities(Order.id))).group_by(Order.status).all())
+    if status:
+        q=q.filter(Order.status==status)
+    rows=q.order_by(Order.id.desc()).all()
+    return render_template('orders.html',u=u,orders=rows,term=term,status=status,status_counts=all_counts)
 
 
 def create_order(selected, customer_user=None, link=None, source='portal'):

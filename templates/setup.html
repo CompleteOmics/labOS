@@ -1,1 +1,14 @@
-{% extends 'base.html' %}{% block body %}<div class="login-shell"><div class="card login-card"><img src="{{url_for('static',filename='complete_omics_logo.png')}}" style="max-width:260px"><h1>First-time setup</h1><p>Create the first Complete Omics LabOS master administrator. No demo accounts are included.</p><form method="post"><label>Name</label><input name="name" required><label>Username</label><input name="username" required><label>Email</label><input type="email" name="email" required><label>Password</label><input type="password" name="password" minlength="12" required><label>Confirm password</label><input type="password" name="confirm_password" minlength="12" required><button>Create Master Administrator</button></form></div></div>{% endblock %}
+{% extends '_auth.html' %}{% block title %}First-time setup · Complete Omics LabOS{% endblock %}
+{% block auth_body %}
+<h1>First-time setup</h1>
+<p>Create the master administrator for this LabOS installation. No demo accounts are included.</p>
+<form method="post">
+  <label for="name">Full name</label><input id="name" name="name" autocomplete="name" required>
+  <label for="username">Username</label><input id="username" name="username" autocomplete="username" required>
+  <label for="email">Email</label><input id="email" type="email" name="email" autocomplete="email" required>
+  <label for="password">Password</label><input id="password" type="password" name="password" minlength="12" autocomplete="new-password" required>
+  <label for="confirm_password">Confirm password</label><input id="confirm_password" type="password" name="confirm_password" minlength="12" autocomplete="new-password" required>
+  <small>At least 12 characters, with letters and numbers.</small>
+  <button type="submit" style="margin-top:16px">Create master administrator</button>
+</form>
+{% endblock %}

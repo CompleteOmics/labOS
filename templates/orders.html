@@ -1,1 +1,50 @@
-{% extends 'base.html' %}{% block body %}<div class="topline"><h1>Orders</h1><div>{% if u.role in ('customer','staff','director','master') %}<a class="button" href="{{url_for('new_order')}}">+ New Order</a>{% endif %} {% if u.role in ('staff','director','master') %}<a class="button" href="{{url_for('import_clinic_orders')}}">Import Clinic Excel</a> <a class="button secondary" href="{{url_for('standing_orders')}}">Standing Orders</a>{% endif %} <a class="button secondary" href="{{url_for('export_orders')}}">Export CSV</a></div></div><div class="card"><table><tr><th>Order</th><th>Patient</th><th>Requester / Organization</th><th>Payment</th><th>Status</th><th>Accession</th><th>Created</th></tr>{% for o in orders %}<tr><td><a href="{{url_for('order_detail',order_id=o.id)}}">{{o.order_no}}</a></td><td>{{o.patient_name}}</td><td>{{o.requester_name or '—'}}<br><small>{{o.requester_organization or o.requester_email or ''}}</small></td><td><span class="pill">{{o.payment_type or 'Insurance'}}</span><br><small>{{o.billing_status or 'Not Billed'}}</small></td><td>{{o.status}}</td><td>{{o.accession_no or '—'}}</td><td>{{fmt_dt(o.created_at)}}</td></tr>{% endfor %}</table></div>{% endblock %}
+{% extends 'base.html' %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>Orders</h1>
+    <p>{% if u.role == 'customer' %}Orders for your clinic, newest first.{% else %}Every requisition across clinics, newest first.{% endif %}</p>
+  </div>
+  <div class="btn-row">
+    <a class="button secondary" href="{{ url_for('export_orders') }}">{{ icon('download') }}Export CSV</a>
+    {% if u.role in ('staff','director','master') %}
+    <a class="button secondary" href="{{ url_for('standing_orders') }}">{{ icon('repeat') }}Standing orders</a>
+    <a class="button secondary" href="{{ url_for('import_clinic_orders') }}">{{ icon('import') }}Import clinic Excel</a>
+    {% endif %}
+    <a class="button" href="{{ url_for('new_order') }}">{{ icon('plus') }}New order</a>
+  </div>
+</div>
+
+{% set all_n = status_counts.values()|sum %}
+<nav class="sectiontabs" aria-label="Filter by status">
+  <a href="{{ url_for('orders', q=term or None) }}" class="{{ 'active' if not status }}">All <span class="muted">{{ all_n }}</span></a>
+  {% for s in ['Submitted','Received','Testing','Review','Released'] %}
+  <a href="{{ url_for('orders', status=s, q=term or None) }}" class="{{ 'active' if status == s }}">{{ s }} <span class="muted">{{ status_counts.get(s, 0) }}</span></a>
+  {% endfor %}
+</nav>
+
+<div class="card flush">
+  <form method="get" class="table-tools" style="padding:14px 16px 0;margin:0 0 12px">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <input type="search" name="q" value="{{ term }}" placeholder="Search order #, patient, MRN, accession, clinic…" style="max-width:420px" aria-label="Search orders">
+    <button class="secondary" type="submit">Search</button>
+    {% if term %}<a class="mini" href="{{ url_for('orders', status=status or None) }}">Clear</a>{% endif %}
+    <span class="count">{{ orders|length }} order{{ '' if orders|length == 1 else 's' }}</span>
+  </form>
+  <table>
+    <tr><th>Order</th><th>Patient</th><th>Requester / clinic</th><th>Payment</th><th>Status</th><th>Accession</th><th>Created</th></tr>
+    {% for o in orders %}
+    <tr>
+      <td><a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.order_no }}</a></td>
+      <td>{{ o.patient_name }}{% if o.patient_mrn %}<small>MRN {{ o.patient_mrn }}</small>{% endif %}</td>
+      <td>{{ o.requester_name or '—' }}<small>{{ o.requester_organization or o.requester_email or '' }}</small></td>
+      <td>{{ o.payment_type or 'Insurance' }}<small>{{ o.billing_status or 'Not billed' }}</small></td>
+      <td><span class="pill">{{ o.status }}</span></td>
+      <td>{{ o.accession_no or '—' }}</td>
+      <td data-sort="{{ o.created_at.isoformat() if o.created_at }}">{{ fmt_dt(o.created_at) }}</td>
+    </tr>
+    {% endfor %}
+    {% if not orders %}<tr><td colspan="7" class="empty">{% if term or status %}No orders match these filters.{% else %}No orders yet. <a href="{{ url_for('new_order') }}">Create the first one →</a>{% endif %}</td></tr>{% endif %}
+  </table>
+</div>
+{% endblock %}

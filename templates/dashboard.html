@@ -1,8 +1,197 @@
-{% extends 'base.html' %}{% block body %}{% if u.role=='customer' %}<div class="clinical-note"><b>Clinic workspace:</b> Your provider account shows the shared order queue for your assigned clinic. Contact Complete Omics if your clinic assignment needs to be changed.</div>{% endif %}
-<div class="pagehero"><h1>Laboratory Command Center</h1><p>{{u.name}} · {{u.organization}} · {{u.role|title}} · real-time operational overview</p></div>
-<div class="topline"><div><h2>Order workflow</h2><small>Live status counts across the laboratory</small></div>{% if u.role=='customer' %}<a class="button" href="{{url_for('new_order')}}">+ New Order</a>{% elif u.role in ('director','master') %}<div><a class="button" href="{{url_for('finance_dashboard')}}">Finance & Profitability</a> <a class="button secondary" href="{{url_for('share_links')}}">Create Share Link</a></div>{% endif %}</div>
-<div class="stats">{% for k,v in counts.items() %}<div class="stat"><strong>{{v}}</strong><span>{{k}}</span></div>{% endfor %}</div>
-{% if u.role in ('staff','director') %}<div class="card"><div class="quality-banner"><div class="quality-icon">Q</div><div><h2 style="margin-bottom:4px">Quality intelligence</h2><small>QC, autoverification and workload signals for rapid review</small></div></div><div class="qualitygrid" style="margin-top:14px"><div class="qualitytile"><b>{{quality.qc_rejects}}</b><small>QC rejects / last 100</small></div><div class="qualitytile"><b>{{quality.qc_warnings}}</b><small>QC warnings / last 100</small></div><div class="qualitytile"><b>{{quality.qc_total}}</b><small>QC observations</small></div><div class="qualitytile"><b>{{quality.av_holds}}</b><small>Quality holds</small></div><div class="qualitytile"><b>{{quality.open_batches}}</b><small>Open batches</small></div></div></div>
-<div class="modulebar"><a href="{{url_for('qc')}}">📈 QC Command Center</a><a href="{{url_for('quality_policies')}}">🛡 Quality Policies</a><a href="{{url_for('qc_lot_comparison')}}">🧪 Lot-to-Lot</a><a href="{{url_for('instrument_import')}}">⬆ Instrument Import</a></div>{% endif %}
-<div class="card"><h2>Recent Orders</h2><table><tr><th>Order</th><th>Patient</th><th>Requester</th><th>Status</th><th>Accession</th><th>Created</th></tr>{% for o in recent %}<tr><td><a href="{{url_for('order_detail',order_id=o.id)}}"><b>{{o.order_no}}</b></a></td><td>{{o.patient_name}}</td><td>{{o.requester_organization or o.requester_email or '—'}}</td><td><span class="pill">{{o.status}}</span></td><td>{{o.accession_no or '—'}}</td><td>{{fmt_dt(o.created_at)}}</td></tr>{% endfor %}</table></div>
+{% extends 'base.html' %}
+{% block body %}
+{%- set lab = u.role != 'customer' -%}
+{%- set dot = {'Submitted':'var(--info)','Received':'var(--teal)','Testing':'var(--accent)','Review':'var(--warning)','Released':'var(--success)'} -%}
+
+<div class="page-head">
+  <div>
+    {%- set parts = (u.name or u.username).split() -%}
+    {%- set gname = ('Dr. ' ~ parts[-1]) if parts|length > 1 and parts[0].rstrip('.').lower() == 'dr' else parts[0] -%}
+    <h1 id="greet" data-name="{{ gname }}">Welcome back, {{ gname }}</h1>
+    <p><span id="today"></span>{{ role_label(u.role) }}{% if u.organization %} · {{ u.organization }}{% endif %}</p>
+  </div>
+  <div class="btn-row">
+    {% if u.role in ('director','master') %}<a class="button secondary" href="{{ url_for('share_links') }}">{{ icon('link') }}Share link</a>{% endif %}
+    {% if lab %}<a class="button secondary" href="{{ url_for('instrument_import') }}">{{ icon('upload') }}Import results</a>{% endif %}
+    <a class="button" href="{{ url_for('new_order') }}">{{ icon('plus') }}New order</a>
+  </div>
+</div>
+
+{% if not lab %}
+<div class="clinical-note"><b>Clinic workspace.</b> You're seeing orders for your assigned clinic. Contact Complete Omics if your clinic assignment needs to change.</div>
+{% endif %}
+
+<div class="kpis">
+  <a class="kpi" href="{{ url_for('orders') }}">
+    <div class="kpi-top"><span>Orders this week</span><span class="kpi-ico">{{ icon('orders') }}</span></div>
+    <div class="kpi-val">{{ stats.week }}</div>
+    <div class="kpi-sub">
+      {% set d = stats.week - stats.prev_week %}
+      {% if stats.prev_week or stats.week %}<span class="delta {{ 'up' if d >= 0 else 'down' }}">{{ '+' if d >= 0 }}{{ d }}</span> vs last week · {% endif %}{{ stats.today }} today
+    </div>
+  </a>
+  <a class="kpi" href="{{ url_for('orders', status='Testing') }}">
+    <div class="kpi-top"><span>In progress</span><span class="kpi-ico teal">{{ icon('sample') }}</span></div>
+    <div class="kpi-val">{{ stats.in_progress }}</div>
+    <div class="kpi-sub">{{ counts.Received }} received · {{ counts.Testing }} testing</div>
+  </a>
+  <a class="kpi" href="{{ url_for('orders', status='Review') }}">
+    <div class="kpi-top"><span>{{ 'Awaiting review' if lab else 'Pending results' }}</span><span class="kpi-ico warn">{{ icon('clock') }}</span></div>
+    <div class="kpi-val">{{ counts.Review if lab else stats.open }}</div>
+    <div class="kpi-sub">{% if lab %}Director sign-off queue{% else %}Submitted, in lab or in review{% endif %}</div>
+  </a>
+  <div class="kpi">
+    <div class="kpi-top"><span>Median turnaround</span><span class="kpi-ico good">{{ icon('check') }}</span></div>
+    <div class="kpi-val">{% if stats.tat_median is not none %}{% if stats.tat_median < 48 %}{{ '%.1f'|format(stats.tat_median) }}<small style="font-size:14px;font-weight:500"> h</small>{% else %}{{ '%.1f'|format(stats.tat_median/24) }}<small style="font-size:14px;font-weight:500"> d</small>{% endif %}{% else %}—{% endif %}</div>
+    <div class="kpi-sub">{{ stats.released_30 }} released in last 30 days</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Order pipeline</h2><a href="{{ url_for('orders') }}">All orders →</a></div>
+  {% set total = counts.values()|sum or 1 %}
+  <div class="pipeline">
+    {% for s, n in counts.items() %}
+    <a class="pipe" href="{{ url_for('orders', status=s) }}">
+      <span><i class="sdot" style="background:{{ dot[s] }}"></i>{{ s }}</span>
+      <b>{{ n }}</b>
+      <div class="bar"><i style="width:{{ (n / total * 100)|round(1) }}%;background:{{ dot[s] }}"></i></div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid2" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
+  <div class="card">
+    <div class="card-head"><h2>Order volume · last 30 days</h2><small>{{ volume|sum(attribute='n') }} orders</small></div>
+    <div class="chart-box" id="volChart"><div class="chart-tip"></div></div>
+  </div>
+  {% if lab %}
+  <div class="card">
+    <div class="card-head"><h2>QC · last {{ quality.qc_total }} runs</h2><a href="{{ url_for('qc') }}">QC center →</a></div>
+    {% if quality.qc_total %}
+    <div class="donut-wrap">
+      <svg viewBox="0 0 42 42" width="132" height="132" role="img" aria-label="QC outcomes">
+        {% set parts = [('Accept', quality.qc_accepts, 'var(--success)'), ('Warning', quality.qc_warnings, 'var(--warning)'), ('Reject', quality.qc_rejects, 'var(--danger)')] %}
+        {% set acc = namespace(v=25) %}
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--surface-3)" stroke-width="5"/>
+        {% for label, n, c in parts %}{% if n %}{% set pct = n / quality.qc_total * 100 %}
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="{{ c }}" stroke-width="5" stroke-dasharray="{{ pct }} {{ 100 - pct }}" stroke-dashoffset="{{ acc.v }}"><title>{{ label }}: {{ n }}</title></circle>
+        {% set acc.v = acc.v - pct %}{% endif %}{% endfor %}
+        <text x="21" y="21" text-anchor="middle" dominant-baseline="central" font-size="7" font-weight="650" fill="var(--ink)">{{ ((quality.qc_accepts / quality.qc_total) * 100)|round|int }}%</text>
+      </svg>
+      <div class="donut-legend">
+        <div><i class="sdot" style="background:var(--success)"></i>Accepted<b>{{ quality.qc_accepts }}</b></div>
+        <div><i class="sdot" style="background:var(--warning)"></i>Warnings<b>{{ quality.qc_warnings }}</b></div>
+        <div><i class="sdot" style="background:var(--danger)"></i>Rejects<b>{{ quality.qc_rejects }}</b></div>
+        <hr style="margin:4px 0">
+        <div>Autoverification holds<b>{{ quality.av_holds }}</b></div>
+        <div>Open batches<b>{{ quality.open_batches }}</b></div>
+        <div>Samples received today<b>{{ quality.samples_today }}</b></div>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty">No QC results recorded yet.<br><a href="{{ url_for('qc') }}">Set up QC definitions →</a></div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-head"><h2>Quick actions</h2></div>
+    <div class="quick" style="grid-template-columns:1fr">
+      <a href="{{ url_for('new_order') }}">{{ icon('plus') }}Place a new order</a>
+      <a href="{{ url_for('orders', status='Released') }}">{{ icon('download') }}Released reports</a>
+      <a href="{{ url_for('mfa_settings') }}">{{ icon('shield') }}Account security</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid2" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
+  <div class="card flush">
+    <div class="card-head"><h2>{{ 'Worklist · oldest open orders' if lab else 'Open orders' }}</h2><a href="{{ url_for('orders') }}">View all →</a></div>
+    <table class="no-enhance">
+      <tr><th>Order</th><th>Patient</th><th>Status</th><th>Age</th></tr>
+      {% for o in worklist %}
+      <tr>
+        <td><a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.order_no }}</a><small>{{ o.requester_organization or o.requester_name or '—' }}</small></td>
+        <td>{{ o.patient_name }}{% if o.accession_no %}<small>{{ o.accession_no }}</small>{% endif %}</td>
+        <td><span class="pill">{{ o.status }}</span></td>
+        <td class="{{ 'reject' if o.age_hours > 120 else ('warningtext' if o.age_hours > 72 else '') }}">{% if o.age_hours < 24 %}{{ o.age_hours|round|int }} h{% else %}{{ (o.age_hours/24)|round(1) }} d{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="empty">Nothing open — all caught up.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% if lab %}
+  <div class="card">
+    <div class="card-head"><h2>Recent activity</h2>{% if u.role in ('director','master') %}<a href="{{ url_for('audit_log') }}">Audit log →</a>{% endif %}</div>
+    <ul class="feed">
+      {% for a in activity %}
+      <li><div class="fdot">{{ (a.who.split()|map('first')|join|upper)[:2] }}</div><div><b>{{ a.action }}</b> <span class="muted">{{ a.entity }}{% if a.entity_id %} #{{ a.entity_id }}{% endif %}</span><small>{{ a.who }} · {{ fmt_dt(a.at) }}</small></div></li>
+      {% else %}
+      <li class="empty" style="display:block">No activity yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else %}
+  <div class="card flush">
+    <div class="card-head"><h2>Recently updated</h2></div>
+    <table class="no-enhance">
+      <tr><th>Order</th><th>Status</th></tr>
+      {% for o in recent %}<tr><td><a href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.order_no }}</a><small>{{ o.patient_name }}</small></td><td><span class="pill">{{ o.status }}</span></td></tr>
+      {% else %}<tr><td colspan="2" class="empty">No orders yet.</td></tr>{% endfor %}
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{% if lab %}
+<div class="card">
+  <div class="card-head"><h2>Jump to</h2></div>
+  <div class="quick">
+    <a href="{{ url_for('samples') }}">{{ icon('sample') }}Accession samples</a>
+    <a href="{{ url_for('plates') }}">{{ icon('plate') }}Plate maps</a>
+    <a href="{{ url_for('worksheets') }}">{{ icon('sheet') }}Worksheets</a>
+    <a href="{{ url_for('qc') }}">{{ icon('activity') }}Enter QC</a>
+    <a href="{{ url_for('qc_lot_comparison') }}">{{ icon('compare') }}Lot-to-lot</a>
+    <a href="{{ url_for('inventory') }}">{{ icon('package') }}Inventory</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var g=document.getElementById('greet'), h=new Date().getHours();
+  if(g) g.textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+', '+g.dataset.name;
+  var t=document.getElementById('today'); if(t) t.textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})+' · ';
+  var data = {{ volume|tojson }};
+  var box = document.getElementById('volChart'); if(!box) return;
+  var tip = box.querySelector('.chart-tip');
+  var W = 640, H = 180, P = {l:28, r:6, t:10, b:22};
+  var max = Math.max(4, Math.max.apply(null, data.map(function(d){return d.n;})));
+  var step = Math.ceil(max/4); max = step*4;
+  var bw = (W-P.l-P.r)/data.length;
+  var y = function(v){ return P.t + (H-P.t-P.b)*(1-v/max); };
+  var svg = '<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="Orders per day, last 30 days">';
+  for(var g=0; g<=4; g++){ var gy=y(g*step); svg += '<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+gy+'" y2="'+gy+'" stroke="var(--line-2)" stroke-width="1"/><text x="'+(P.l-6)+'" y="'+gy+'" text-anchor="end" dominant-baseline="central" font-size="10" fill="var(--faint)">'+(g*step)+'</text>'; }
+  data.forEach(function(d,i){
+    var x = P.l + i*bw + bw*0.18, w = bw*0.64, top = y(d.n), h = Math.max(d.n?2:0, H-P.b-top);
+    svg += '<rect data-i="'+i+'" x="'+x+'" y="'+(H-P.b-h)+'" width="'+w+'" height="'+h+'" rx="2" fill="'+(i===data.length-1?'var(--teal)':'var(--accent)')+'" opacity="'+(d.n?0.9:0)+'"/>';
+    svg += '<rect data-i="'+i+'" x="'+(P.l+i*bw)+'" y="'+P.t+'" width="'+bw+'" height="'+(H-P.t-P.b)+'" fill="transparent"/>';
+    if(i%5===0 || i===data.length-1) svg += '<text x="'+(P.l+i*bw+bw/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="var(--faint)">'+d.d+'</text>';
+  });
+  svg += '</svg>';
+  box.insertAdjacentHTML('afterbegin', svg);
+  box.addEventListener('mousemove', function(e){
+    var i = e.target.getAttribute && e.target.getAttribute('data-i'); if(i===null){ tip.style.opacity=0; return; }
+    var d = data[+i], r = box.getBoundingClientRect();
+    tip.textContent = d.d + ' · ' + d.n + ' order' + (d.n===1?'':'s');
+    tip.style.left = (e.clientX - r.left) + 'px'; tip.style.top = (e.clientY - r.top) + 'px'; tip.style.opacity = 1;
+  });
+  box.addEventListener('mouseleave', function(){ tip.style.opacity = 0; });
+})();
+</script>
 {% endblock %}

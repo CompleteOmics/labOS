@@ -1,144 +1,241 @@
+{% from '_icons.html' import icon %}
+{#- Navigation map: (section, audience, [(endpoint, label, icon, keywords)]). audience: all | lab (staff+) | admin (director+) -#}
+{%- set NAV = [
+  ('Overview', 'all', [
+    ('dashboard', 'Dashboard', 'dashboard', 'home command center'),
+    ('orders', 'Orders', 'orders', 'requisitions patients'),
+    ('new_order', 'New order', 'plus', 'create requisition'),
+  ]),
+  ('Specimens', 'lab', [
+    ('samples', 'Samples', 'sample', 'accession specimen'),
+    ('batches', 'Batches', 'layers', 'runs'),
+    ('worksheets', 'Worksheets', 'sheet', 'run sheet'),
+    ('plates', 'Plate maps', 'plate', '96-well'),
+  ]),
+  ('Operations', 'lab', [
+    ('instrument_import', 'Instrument import', 'upload', 'results reconcile'),
+    ('import_clinic_orders', 'Clinic Excel import', 'import', 'bulk hart'),
+    ('standing_orders', 'Standing orders', 'repeat', 'clinic defaults'),
+    ('inventory', 'Inventory', 'package', 'reagents lots supplies'),
+  ]),
+  ('Tests & results', 'lab', [
+    ('test_catalog', 'Test catalog', 'book', 'orderable tests'),
+    ('diagnostics_menu', 'Diagnostics menu', 'menu-list', 'platform specialty'),
+    ('reference_intervals', 'Reference intervals', 'sliders', 'normal critical'),
+    ('calculations', 'Calculations', 'calc', 'risk models'),
+    ('toxicology', 'Toxicology', 'beaker', 'lc-ms/ms'),
+    ('loinc_mapping', 'LOINC mapping', 'tag', 'hl7 fhir codes'),
+  ]),
+  ('Quality', 'lab', [
+    ('qc', 'Quality control', 'activity', 'westgard levey jennings'),
+    ('qc_lot_comparison', 'Lot-to-lot', 'compare', 'control lot'),
+    ('quality_policies', 'Quality policies', 'shield', 'autoverification'),
+  ]),
+  ('Administration', 'admin', [
+    ('user_admin', 'Users', 'users', 'staff providers accounts'),
+    ('clinic_admin', 'Clinics', 'building', 'provider groups roster'),
+    ('share_links', 'Share links', 'link', 'provider request'),
+    ('finance_dashboard', 'Finance', 'dollar', 'revenue profit billing'),
+    ('audit_log', 'Audit log', 'scroll', 'activity trail'),
+    ('compliance_center', 'Security & compliance', 'lock', 'hipaa baa risk'),
+    ('interoperability_center', 'Interoperability', 'exchange', 'dxf qhio hl7'),
+    ('branding_settings', 'Report branding', 'palette', 'letterhead pdf'),
+  ]),
+] -%}
+{%- set PARENT = {'order_detail':'orders','batch_detail':'batches','worksheet_detail':'worksheets','plate_detail':'plates','qc_chart':'qc','qc_review':'qc'} -%}
+{%- set active_ep = PARENT.get(request.endpoint, request.endpoint) -%}
+{%- set ns = namespace(title=None, section=None) -%}
+{%- if u -%}{%- for sec, aud, items in NAV -%}{%- for ep, label, ic, kw in items -%}{%- if active_ep == ep -%}{%- set ns.title = label -%}{%- set ns.section = sec -%}{%- endif -%}{%- endfor -%}{%- endfor -%}{%- endif -%}
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Complete Omics LabOS Final 11.1.3</title>
-<link rel="stylesheet" href="{{url_for('static',filename='style.css')}}">
-
-<style>
-.small-action{padding:.42rem .7rem!important;font-size:.82rem!important;white-space:nowrap}
-.mistake-delete-card{border:1px solid #f3b6b6;background:#fff8f8}
-.mistake-delete-card h2{color:#9f1d1d}
-</style>
+<title>{% block title %}{{ ns.title ~ ' · ' if ns.title }}Complete Omics LabOS{% endblock %}</title>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ labos_version|urlencode }}">
+<script>try{var t=localStorage.getItem('labos-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+{% block head %}{% endblock %}
 </head>
-<body>
+{% block layout %}
 {% if u %}
-<header class="app-header">
-  <div class="header-inner">
-    <a class="brand" href="{{url_for('dashboard')}}" aria-label="Complete Omics LabOS home">
-      <div class="brandmark">CO</div>
-      <div class="brandtext">
-        <b>Complete Omics LabOS</b>
-        <span>Clinical Laboratory Operations</span>
-      </div>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+    <a class="sb-brand" href="{{ url_for('dashboard') }}">
+      <div class="sb-mark">CO</div>
+      <div class="sb-name"><b>Complete Omics</b><span>LabOS · Clinical laboratory</span></div>
     </a>
-
-    <nav class="topnav" aria-label="Primary navigation">
-      <a class="nav-direct" href="{{url_for('dashboard')}}">Dashboard</a>
-      <a class="nav-direct" href="{{url_for('orders')}}">Orders</a>
-
-      {% if u.role in ('staff','director','master') %}
-      <div class="nav-group">
-        <button class="nav-trigger" type="button" aria-expanded="false">Laboratory <span class="chevron">⌄</span></button>
-        <div class="nav-menu nav-menu-2col">
-          <div class="nav-column">
-            <div class="nav-heading">Specimen workflow</div>
-            <a href="{{url_for('new_order')}}"><b>New Laboratory Order</b><small>Staff/director internal order entry</small></a>
-            <a href="{{url_for('samples')}}"><b>Samples</b><small>Accessioned specimen registry</small></a>
-            <a href="{{url_for('batches')}}"><b>Batches</b><small>Batch and run organization</small></a>
-            <a href="{{url_for('worksheets')}}"><b>Worksheets</b><small>Electronic run worksheets</small></a>
-            <a href="{{url_for('plates')}}"><b>Plate Maps</b><small>96-well plate layouts</small></a>
-          </div>
-          <div class="nav-column">
-            <div class="nav-heading">Instrumentation</div>
-            <a href="{{url_for('instrument_import')}}"><b>Instrument Import</b><small>Import and reconcile results</small></a>
-            <a href="{{url_for('inventory')}}"><b>Inventory</b><small>Reagents, lots and supplies</small></a>
-            <a href="{{url_for('import_clinic_orders')}}"><b>Clinic Excel Import</b><small>Bulk HART standing-order accessioning</small></a>
-            <a href="{{url_for('standing_orders')}}"><b>Standing Orders</b><small>Clinic defaults for HART-CADhs and HART-CVE</small></a>
-          </div>
-        </div>
+    <nav class="sb-nav">
+      {% for sec, aud, items in NAV %}{% if aud=='all' or (aud=='lab' and u.role in ('staff','director','master')) or (aud=='admin' and u.role in ('director','master')) %}
+      <div class="sb-section">
+        <div class="sb-label">{{ sec }}</div>
+        {% for ep, label, ic, kw in items %}
+        <a class="sb-link{{ ' active' if active_ep == ep }}" href="{{ url_for(ep) }}" data-kw="{{ kw }}" data-sec="{{ sec }}">{{ icon(ic) }}<span>{{ label }}</span></a>
+        {% endfor %}
       </div>
-
-      <div class="nav-group">
-        <button class="nav-trigger" type="button" aria-expanded="false">Tests &amp; Results <span class="chevron">⌄</span></button>
-        <div class="nav-menu nav-menu-2col">
-          <div class="nav-column">
-            <div class="nav-heading">Test directory</div>
-            <a href="{{url_for('test_catalog')}}"><b>Test Catalog</b><small>Configured orderable tests</small></a>
-            <a href="{{url_for('diagnostics_menu')}}"><b>Diagnostics Menu</b><small>Browse by platform and specialty</small></a>
-            <a href="{{url_for('loinc_mapping')}}"><b>LOINC Mapping</b><small>Standard codes for HL7/FHIR exchange</small></a>
-            <a href="{{url_for('toxicology')}}"><b>Toxicology</b><small>LC-MS/MS toxicology workflow</small></a>
-          </div>
-          <div class="nav-column">
-            <div class="nav-heading">Interpretation</div>
-            <a href="{{url_for('reference_intervals')}}"><b>Reference Intervals</b><small>Normal and critical values</small></a>
-            <a href="{{url_for('calculations')}}"><b>Calculations</b><small>Validated rules and risk models</small></a>
-          </div>
-        </div>
-      </div>
-
-      <div class="nav-group">
-        <button class="nav-trigger" type="button" aria-expanded="false">Quality <span class="chevron">⌄</span></button>
-        <div class="nav-menu">
-          <div class="nav-column">
-            <div class="nav-heading">Quality management</div>
-            <a href="{{url_for('qc')}}"><b>Quality Control</b><small>QC results, charts and rules</small></a>
-            <a href="{{url_for('quality_policies')}}"><b>Quality Policies</b><small>Controlled laboratory policies</small></a>
-          </div>
-        </div>
-      </div>
-      {% endif %}
-
-      <div class="nav-group nav-group-right">
-        <button class="nav-trigger" type="button" aria-expanded="false">Account <span class="chevron">⌄</span></button>
-        <div class="nav-menu nav-menu-right">
-          <div class="nav-column">
-            <div class="nav-heading">Account &amp; administration</div>
-            {% if u.role in ('director','master') %}
-            <a href="{{url_for('clinic_admin')}}"><b>Clinic Management</b><small>Clinics, provider groups and access boundaries</small></a>
-            <a href="{{url_for('user_admin')}}"><b>User Management</b><small>Providers, staff, passwords and access</small></a>
-            <a href="{{url_for('share_links')}}"><b>Share Links</b><small>Provider request access</small></a>
-            <a href="{{url_for('audit_log')}}"><b>Audit Log</b><small>Review system activity</small></a>
-            <a href="{{url_for('compliance_center')}}"><b>Security &amp; Compliance</b><small>HIPAA safeguards, risks, BAAs, training and incidents</small></a>
-            <a href="{{url_for('interoperability_center')}}"><b>DxF / QHIO Readiness</b><small>Exchange profile and transaction logging</small></a>
-            <a href="{{url_for('finance_dashboard')}}"><b>Finance & Profitability</b><small>Monthly and YTD revenue, cost and net profit</small></a>
-            <a href="{{url_for('branding_settings')}}"><b>Report Branding</b><small>Upload Word letterhead and configure PDF reports</small></a>
-            {% endif %}
-            <a href="{{url_for('change_password')}}"><b>Change Password</b><small>Update your personal password</small></a>
-            <a href="{{url_for('mfa_settings')}}"><b>Security</b><small>MFA and account protection</small></a>
-            <a class="logout-link" href="{{url_for('logout')}}"><b>Log out</b></a>
-          </div>
-        </div>
+      {% endif %}{% endfor %}
+      <div class="sb-section">
+        <div class="sb-label">Account</div>
+        <a class="sb-link{{ ' active' if request.endpoint == 'mfa_settings' }}" href="{{ url_for('mfa_settings') }}" data-kw="mfa two-factor security" data-sec="Account">{{ icon('shield') }}<span>Security &amp; MFA</span></a>
+        <a class="sb-link{{ ' active' if request.endpoint == 'change_password' }}" href="{{ url_for('change_password') }}" data-kw="password" data-sec="Account">{{ icon('key') }}<span>Change password</span></a>
+        <a class="sb-link" href="{{ url_for('logout') }}" data-kw="sign out logout" data-sec="Account">{{ icon('logout') }}<span>Sign out</span></a>
       </div>
     </nav>
+    <div class="sb-foot">
+      <a class="sb-user" href="{{ url_for('mfa_settings') }}" title="Account security">
+        <div class="avatar">{{ ((u.name or u.username or '?').split()|map('first')|join|upper)[:2] }}</div>
+        <div><b>{{ u.name or u.username }}</b><span>{{ role_label(u.role) }}</span></div>
+      </a>
+    </div>
+  </aside>
+  <div class="scrim" data-close-nav></div>
+
+  <div class="main-col">
+    <header class="topbar">
+      <button class="icon-btn tb-menu" type="button" aria-label="Open navigation" data-open-nav>{{ icon('menu') }}</button>
+      <div class="crumbs">{% if ns.section %}{{ ns.section }} / {% endif %}<b>{% block crumb %}{{ ns.title or 'LabOS' }}{% endblock %}</b></div>
+      <form class="tb-search" action="{{ url_for('orders') }}" method="get" role="search">
+        {{ icon('search') }}
+        <input name="q" id="globalSearch" placeholder="Search orders, patients, pages…" autocomplete="off" value="{{ request.args.get('q','') if request.endpoint=='orders' }}">
+        <kbd>Ctrl K</kbd>
+      </form>
+      <button class="icon-btn" type="button" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode"><span class="theme-light-icon">{{ icon('moon') }}</span><span class="theme-dark-icon">{{ icon('sun') }}</span></button>
+    </header>
+    <main>
+      {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}
+      <div class="alert {{ cat }}" role="status"><span>{{ msg }}</span><button class="alert-x" type="button" aria-label="Dismiss" onclick="this.parentElement.remove()">×</button></div>
+      {% endfor %}{% endwith %}
+      {% block body %}{% endblock %}
+    </main>
+    <div class="footer-note">Complete Omics LabOS {{ labos_version }} · LOINC 2.83 · HIPAA security controls &amp; DxF interoperability readiness (not a certification)</div>
   </div>
-</header>
-{% endif %}
+</div>
+
+<div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Quick navigation">
+  <div class="cmdk-box">
+    <input id="cmdkInput" placeholder="Jump to a page, or search orders…" autocomplete="off">
+    <div class="cmdk-list" id="cmdkList"></div>
+  </div>
+</div>
+{% else %}
+<body class="public-shell">
+<div class="public-top"><div class="sb-mark">CO</div><div class="sb-name"><b>Complete Omics</b><span>Clinical laboratory</span></div></div>
 <main>
-{% with messages=get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="alert {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
-{% block body %}{% endblock %}
-<div class="footer-note">Complete Omics LabOS Final 11.1.4 · LOINC 2.83 Integrated · HIPAA Security Controls / DxF Interoperability Readiness · Not a certification</div>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<div class="alert {{ cat }}" role="status"><span>{{ msg }}</span></div>{% endfor %}{% endwith %}
+  {% block public_body %}{{ self.body() }}{% endblock %}
 </main>
+<div class="footer-note">Complete Omics LabOS · Secure clinical laboratory portal</div>
+{% endif %}
+{% endblock %}
+
 <script>
 (function(){
-  const groups=[...document.querySelectorAll('.nav-group')];
-  function closeAll(except){
-    groups.forEach(g=>{ if(g!==except){ g.classList.remove('menu-open'); const b=g.querySelector(':scope > .nav-trigger'); if(b)b.setAttribute('aria-expanded','false'); }});
-  }
-  groups.forEach(g=>{
-    const b=g.querySelector(':scope > .nav-trigger');
-    if(!b) return;
-    b.addEventListener('click', function(e){
-      e.preventDefault();
-      const opening=!g.classList.contains('menu-open');
-      closeAll(g);
-      g.classList.toggle('menu-open', opening);
-      b.setAttribute('aria-expanded', opening ? 'true':'false');
+  // CSRF token on every POST form (including ones rendered later).
+  var CSRF = {{ csrf_token|tojson }};
+  window.LABOS_CSRF = CSRF;
+  function addCsrf(root){
+    (root||document).querySelectorAll('form').forEach(function(f){
+      if((f.getAttribute('method')||'GET').toUpperCase()==='POST' && !f.querySelector('input[name="_csrf_token"]')){
+        var i=document.createElement('input'); i.type='hidden'; i.name='_csrf_token'; i.value=CSRF; f.appendChild(i);
+      }
     });
-  });
-  document.addEventListener('click', e=>{ if(!e.target.closest('.nav-group')) closeAll(); });
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeAll(); });
+  }
+  addCsrf();
 
-  // Add the session CSRF token to every POST form, including dynamically rendered forms.
-  document.querySelectorAll('form').forEach(f=>{
-    const method=(f.getAttribute('method')||'GET').toUpperCase();
-    if(method==='POST' && !f.querySelector('input[name="_csrf_token"]')){
-      const i=document.createElement('input'); i.type='hidden'; i.name='_csrf_token'; i.value={{ csrf_token|tojson }}; f.appendChild(i);
+  // Theme toggle (remembered per browser).
+  var root=document.documentElement, tt=document.getElementById('themeToggle');
+  if(tt) tt.addEventListener('click',function(){
+    var dark = root.getAttribute('data-theme')==='dark' || (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = dark ? 'light' : 'dark';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem('labos-theme',next);}catch(e){}
+  });
+
+  // Mobile sidebar.
+  document.querySelectorAll('[data-open-nav]').forEach(function(b){b.addEventListener('click',function(){document.body.classList.add('nav-open');});});
+  document.querySelectorAll('[data-close-nav]').forEach(function(b){b.addEventListener('click',function(){document.body.classList.remove('nav-open');});});
+
+  // Mark the active in-page tab.
+  document.querySelectorAll('.sectiontabs a').forEach(function(a){ if(a.pathname===location.pathname) a.classList.add('active'); });
+
+  // Status pills: colour by workflow state wherever a .pill holds a status word.
+  document.querySelectorAll('.pill').forEach(function(p){
+    var s=(p.textContent||'').trim().toLowerCase();
+    if(['submitted','received','testing','review','released','cancelled','rejected','draft'].indexOf(s)>-1) p.classList.add('st-'+s);
+  });
+
+  // Tables: wrap for horizontal scroll, click-to-sort headers, quick filter on long tables.
+  document.querySelectorAll('main table').forEach(function(t){
+    if(t.closest('.plategrid') || t.classList.contains('no-enhance')) return;
+    var p=t.parentElement;
+    if(!/(table-wrap|table-scroll|tablewrap|user-table-wrap|tox-table-wrap|chartwrap)/.test(p.className) && getComputedStyle(p).overflowX==='visible'){
+      var w=document.createElement('div'); w.className='table-wrap'; p.insertBefore(w,t); w.appendChild(t);
+    }
+    var rows=[].slice.call(t.rows); if(!rows.length) return;
+    var head=rows[0]; if(!head.querySelector('th')) return;
+    var body=rows.slice(1).filter(function(r){return !r.querySelector('th');});
+    if(body.length<2) {
+      if(body.length===0){ var cols=head.cells.length, tr=t.insertRow(-1), td=tr.insertCell(0); td.colSpan=cols; td.className='empty'; td.textContent='Nothing here yet.'; }
+      return;
+    }
+    var tbody=body[0].parentElement;
+    [].forEach.call(head.cells,function(th,idx){
+      if(th.colSpan>1 || !th.textContent.trim()) return;
+      th.classList.add('sortable');
+      th.addEventListener('click',function(){
+        var asc=!th.classList.contains('sort-asc');
+        [].forEach.call(head.cells,function(h){h.classList.remove('sort-asc','sort-desc');});
+        th.classList.add(asc?'sort-asc':'sort-desc');
+        var val=function(r){var c=r.cells[idx]; return c?(c.getAttribute('data-sort')||c.textContent).trim():'';};
+        body.sort(function(a,b){
+          var x=val(a), y=val(b), nx=parseFloat(x.replace(/[$,%]/g,'')), ny=parseFloat(y.replace(/[$,%]/g,''));
+          var r=(!isNaN(nx)&&!isNaN(ny)&&/^[\s$\-\d.,%]+$/.test(x)&&/^[\s$\-\d.,%]+$/.test(y))?nx-ny:x.localeCompare(y,undefined,{numeric:true,sensitivity:'base'});
+          return asc?r:-r;
+        }).forEach(function(r){tbody.appendChild(r);});
+      });
+    });
+    var card=t.closest('.card'); if(body.length>=8 && !(card && card.querySelector('.table-tools'))){
+      var tools=document.createElement('div'); tools.className='table-tools';
+      tools.innerHTML='<input type="search" placeholder="Filter rows…" aria-label="Filter table rows"><span class="count"></span>';
+      var wrap=t.closest('.table-wrap,.table-scroll,.tablewrap,.user-table-wrap,.tox-table-wrap')||t;
+      wrap.parentElement.insertBefore(tools,wrap);
+      var inp=tools.querySelector('input'), cnt=tools.querySelector('.count');
+      var upd=function(){var q=inp.value.trim().toLowerCase(), n=0; body.forEach(function(r){var m=!q||r.textContent.toLowerCase().indexOf(q)>-1; r.style.display=m?'':'none'; if(m)n++;}); cnt.textContent=n+' of '+body.length+' rows';};
+      inp.addEventListener('input',upd); upd();
     }
   });
-  window.LABOS_CSRF={{ csrf_token|tojson }};
+
+  // Command palette (Ctrl/Cmd+K or focusing the top search).
+  var cm=document.getElementById('cmdk'); if(!cm) return;
+  var ci=document.getElementById('cmdkInput'), cl=document.getElementById('cmdkList'), gs=document.getElementById('globalSearch');
+  var pages=[].slice.call(document.querySelectorAll('.sb-link')).map(function(a){return {href:a.href,label:a.textContent.trim(),sec:a.dataset.sec||'',kw:(a.dataset.kw||''),svg:a.querySelector('svg').outerHTML};});
+  var sel=0, items=[];
+  function esc(s){return s.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function render(){
+    var q=ci.value.trim().toLowerCase();
+    items=pages.filter(function(p){return !q||(p.label+' '+p.sec+' '+p.kw).toLowerCase().indexOf(q)>-1;}).slice(0,12);
+    if(q) items.push({href:'{{ url_for('orders') }}?q='+encodeURIComponent(ci.value.trim()),label:'Search orders for “'+ci.value.trim()+'”',sec:'Orders',svg:'{{ icon('search')|replace('\n','') }}'});
+    sel=Math.min(sel,Math.max(items.length-1,0));
+    cl.innerHTML=items.length?items.map(function(p,i){return '<a href="'+p.href+'" class="'+(i===sel?'sel':'')+'">'+p.svg+'<span>'+esc(p.label)+'</span><small>'+esc(p.sec)+'</small></a>';}).join(''):'<div class="cmdk-empty">No matches</div>';
+  }
+  function open(seed){cm.classList.add('open'); ci.value=seed||''; sel=0; render(); setTimeout(function(){ci.focus();},10);}
+  function close(){cm.classList.remove('open');}
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault(); cm.classList.contains('open')?close():open();}
+    else if(e.key==='Escape'&&cm.classList.contains('open')) close();
+    else if(e.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)&&!cm.classList.contains('open')){e.preventDefault(); open();}
+  });
+  if(gs){ gs.addEventListener('keydown',function(e){ if(e.key!=='Enter'&&e.key.length===1&&!e.ctrlKey&&!e.metaKey){e.preventDefault(); open(gs.value+e.key);} }); }
+  cm.addEventListener('click',function(e){if(e.target===cm) close();});
+  ci.addEventListener('input',function(){sel=0;render();});
+  ci.addEventListener('keydown',function(e){
+    if(e.key==='ArrowDown'){e.preventDefault(); sel=Math.min(sel+1,items.length-1); render();}
+    else if(e.key==='ArrowUp'){e.preventDefault(); sel=Math.max(sel-1,0); render();}
+    else if(e.key==='Enter'&&items[sel]){e.preventDefault(); location.href=items[sel].href;}
+  });
 })();
 </script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

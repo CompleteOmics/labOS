@@ -6,3 +6,4 @@ lis_v7.db
 .labos_secret
 .env
 *.bat
+.claude/
