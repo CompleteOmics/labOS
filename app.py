@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 from openpyxl import load_workbook
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LABOS_VERSION = '12.1'
+LABOS_VERSION = '12.2'
 BRANDING_DIR = os.path.join(BASE_DIR, 'branding')
 os.makedirs(BRANDING_DIR, exist_ok=True)
 DEFAULT_LOGO = os.path.join(BASE_DIR, 'static', 'complete_omics_logo.png')
@@ -1875,6 +1875,8 @@ def change_password():
     return render_template('change_password.html',u=u)
 
 
+USER_ROLES=('customer','staff','director','master')
+
 @app.route('/admin/users',methods=['GET','POST'])
 def user_admin():
     u=role_required('master','director')
@@ -1883,9 +1885,9 @@ def user_admin():
         action=request.form.get('action','create')
         if action=='create':
             role=request.form.get('role','customer')
-            if role not in ('customer','staff','director'):
+            if role not in USER_ROLES:
                 abort(400)
-            if role=='director' and not is_master(u):
+            if role in ('director','master') and not is_master(u):
                 abort(403)
             name=(request.form.get('name') or '').strip()
             username=(request.form.get('username') or '').strip().lower()
@@ -1902,6 +1904,23 @@ def user_admin():
                 nu=User(name=name,username=username,email=email,password_hash=generate_password_hash(pw),role=role,organization=organization,clinic_id=(clinic.id if (clinic and role=='customer') else None),active=True,must_change_password=True)
                 db.session.add(nu);db.session.commit();audit('USER_CREATE','user',nu.id,f'role={role}; organization={organization}')
                 flash(f'Account created. Temporary password (show once): {pw}','success')
+        elif action=='set_role':
+            if not is_master(u): abort(403)
+            target=db.session.get(User,int(request.form['user_id'])) or abort(404)
+            new_role=request.form.get('role','')
+            if new_role not in USER_ROLES: abort(400)
+            if target.id==u.id:
+                # Also guarantees at least one Master Administrator always remains (the acting one).
+                flash('You cannot change your own role. Ask another Master Administrator.','danger')
+            elif new_role!=target.role:
+                old_role=target.role
+                target.role=new_role
+                if new_role!='customer':
+                    target.clinic_id=None
+                    if old_role=='customer': target.organization='Complete Omics Inc.'
+                db.session.commit();audit('USER_ROLE_CHANGE','user',target.id,f'by={u.id}; {old_role}->{new_role}')
+                extra=' They will be asked to set up two-factor sign-in at their next sign-in.' if new_role in ('director','master') and not target.mfa_enabled else ''
+                flash(f'{target.name} is now {role_label(new_role)}.{extra}','success')
         elif action in ('activate','deactivate','reset','set_password','delete'):
             target=db.session.get(User,int(request.form['user_id'])) or abort(404)
             if target.role in ('master','director') and not is_master(u):

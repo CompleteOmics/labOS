@@ -112,4 +112,63 @@ def test_director_cannot_create_master_or_manage_directors(app, login_as):
     r = d.post('/admin/users', {'action': 'create', 'role': 'director', 'name': 'X', 'username': 'x_dir', 'email': 'x_dir@example.test'})
     assert r.status_code == 403
     r = d.post('/admin/users', {'action': 'create', 'role': 'master', 'name': 'X', 'username': 'x_m', 'email': 'x_m@example.test'})
+    assert r.status_code == 403
+    r = d.post('/admin/users', {'action': 'create', 'role': 'superuser', 'name': 'X', 'username': 'x_s', 'email': 'x_s@example.test'})
     assert r.status_code == 400
+
+
+def test_master_can_create_and_promote_masters(app, login_as, make_user):
+    import pyotp
+    from conftest import PASSWORD
+    admin = login_as('master')
+    r = admin.post('/admin/users', {'action': 'create', 'role': 'master', 'name': 'Qing Test', 'username': 'qing_test', 'email': 'qing_test@example.test'}, follow_redirects=True)
+    assert b'Temporary password (show once)' in r.data
+    with app.app.app_context():
+        q = app.User.query.filter_by(username='qing_test').one()
+        assert q.role == 'master' and q.must_change_password and not q.mfa_enabled
+
+    # promote an existing staff account; it becomes a full admin but must enrol MFA first
+    staff = make_user('staff')
+    admin.post('/admin/users', {'action': 'set_role', 'user_id': str(staff['id']), 'role': 'master'})
+    with app.app.app_context():
+        assert app.db.session.get(app.User, staff['id']).role == 'master'
+    b = Browser()
+    b.login(staff['username'])
+    r = b.get('/admin/users')
+    assert r.status_code == 302 and '/security/mfa' in r.location
+    b.post('/security/mfa', {'action': 'start'})
+    b.post('/security/mfa', {'action': 'enable', 'code': pyotp.TOTP(b.session()['mfa_setup_secret']).now()})
+    assert b.get('/admin/users').status_code == 200
+
+    # role changes are audited; customer -> staff clears the clinic link
+    doc = make_user('customer', clinic_id=None)
+    admin.post('/admin/users', {'action': 'set_role', 'user_id': str(doc['id']), 'role': 'staff'})
+    with app.app.app_context():
+        assert app.db.session.get(app.User, doc['id']).role == 'staff'
+        assert app.Audit.query.filter_by(action='USER_ROLE_CHANGE', entity_id=doc['id']).count() == 1
+
+
+def test_role_change_guards(app, login_as, make_user):
+    admin, director = login_as('master'), login_as('director')
+    staff = make_user('staff')
+    # directors cannot change roles
+    assert director.post('/admin/users', {'action': 'set_role', 'user_id': str(staff['id']), 'role': 'master'}).status_code == 403
+    # no invalid roles
+    assert admin.post('/admin/users', {'action': 'set_role', 'user_id': str(staff['id']), 'role': 'god'}).status_code == 400
+    # cannot change your own role
+    admin.post('/admin/users', {'action': 'set_role', 'user_id': str(admin.user['id']), 'role': 'staff'})
+    with app.app.app_context():
+        assert app.db.session.get(app.User, admin.user['id']).role == 'master'
+        assert app.db.session.get(app.User, staff['id']).role == 'staff'
+
+
+def test_master_can_demote_another_master_but_one_always_remains(app, login_as, make_user):
+    admin = login_as('master')
+    other = make_user('master')
+    admin.post('/admin/users', {'action': 'set_role', 'user_id': str(other['id']), 'role': 'director'})
+    with app.app.app_context():
+        assert app.db.session.get(app.User, other['id']).role == 'director'
+    # the acting admin can never demote themselves, so an active master always remains
+    admin.post('/admin/users', {'action': 'set_role', 'user_id': str(admin.user['id']), 'role': 'director'})
+    with app.app.app_context():
+        assert app.db.session.get(app.User, admin.user['id']).role == 'master'

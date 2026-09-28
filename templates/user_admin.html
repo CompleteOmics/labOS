@@ -6,7 +6,7 @@
 <label>Full name</label><input name="name" required>
 <label>Username</label><input name="username" required placeholder="e.g., jsmith">
 <label>Email</label><input name="email" type="email" required>
-<label>Role</label><select name="role" id="roleSelect"><option value="customer">Provider / clinic user</option><option value="staff">Laboratory staff</option>{% if is_master(u) %}<option value="director">Laboratory director</option>{% endif %}</select>
+<label>Role</label><select name="role" id="roleSelect"><option value="customer">Provider / clinic user</option><option value="staff">Laboratory staff</option>{% if is_master(u) %}<option value="director">Laboratory director</option><option value="master">Master Administrator (full access)</option>{% endif %}</select>
 <label>Clinic assignment <small>(provider accounts)</small></label><select name="clinic_id"><option value="">No clinic / assign later</option>{% for c in clinics %}<option value="{{c.id}}">{{c.name}}{% if c.code %} · {{c.code}}{% endif %}</option>{% endfor %}</select>
 <label>Organization <small>(used for staff/director or fallback)</small></label><input name="organization" placeholder="Complete Omics Inc.">
 <label>Temporary password <small>(leave blank to generate securely)</small></label><input name="temporary_password" type="text" autocomplete="off">
@@ -16,7 +16,8 @@
 {% for x in users %}<tr><td><b>{{x.name}}</b><small>@{{x.username}}<br>{{x.email}}</small></td><td>{{role_label(x.role)}}</td><td>
 {% if x.role=='customer' %}<form method="post" action="{{url_for('assign_user_clinic',user_id=x.id)}}" class="inline-form"><select name="clinic_id" class="mini-select"><option value="">Unassigned</option>{% for c in clinics %}<option value="{{c.id}}" {% if x.clinic_id==c.id %}selected{% endif %}>{{c.name}}</option>{% endfor %}</select><button class="mini-button">Save</button></form>{% else %}{{x.organization or 'Complete Omics Inc.'}}{% endif %}</td><td><span class="status-pill {{'success' if x.active else 'neutral'}}">{{'Active' if x.active else 'Inactive'}}</span>{% if x.must_change_password %}<small>Temporary password / change required</small>{% endif %}</td><td>{{x.last_login_at.strftime('%Y-%m-%d %H:%M') if x.last_login_at else 'Never'}}</td><td>
 {% if x.role not in ('master','director') or is_master(u) %}
-<details class="password-control"><summary>Password & access</summary>
+<details class="password-control"><summary>{{ "Role, password & access" if is_master(u) and x.id != u.id else "Password & access" }}</summary>
+{% if is_master(u) and x.id != u.id %}<form method="post" class="inline-form" style="margin:8px 0 12px"><input type="hidden" name="action" value="set_role"><input type="hidden" name="user_id" value="{{x.id}}"><label style="width:100%;margin:0">Role</label><select name="role" class="mini-select" aria-label="Role for {{ x.name }}">{% for r in ('customer','staff','director','master') %}<option value="{{ r }}" {% if x.role==r %}selected{% endif %}>{{ role_label(r) }}</option>{% endfor %}</select><button class="mini-button" onclick="return confirm('Change the role for {{ x.name|e }}? A Master Administrator has full access to LabOS.');">Change role</button></form>{% endif %}
 <form method="post" class="password-form"><input type="hidden" name="user_id" value="{{x.id}}">
 <label>Set a password <small>(leave blank to generate a secure temporary password)</small></label>
 <input type="password" name="new_password" minlength="10" autocomplete="new-password" placeholder="At least 10 characters with letters and numbers">
