@@ -7,6 +7,7 @@
     ('new_order', 'New order', 'plus', 'create requisition'),
   ]),
   ('Specimens', 'lab', [
+    ('receiving_home', 'Receiving', 'inbox', 'boxes accessioning prevencio fedex client lab'),
     ('samples', 'Samples', 'sample', 'accession specimen'),
     ('batches', 'Batches', 'layers', 'runs'),
     ('worksheets', 'Worksheets', 'sheet', 'run sheet'),
@@ -42,7 +43,7 @@
     ('branding_settings', 'Report branding', 'palette', 'letterhead pdf'),
   ]),
 ] -%}
-{%- set PARENT = {'order_detail':'orders','batch_detail':'batches','worksheet_detail':'worksheets','plate_detail':'plates','qc_chart':'qc','qc_review':'qc'} -%}
+{%- set PARENT = {'order_detail':'orders','batch_detail':'batches','worksheet_detail':'worksheets','plate_detail':'plates','qc_chart':'qc','qc_review':'qc','receiving_client':'receiving_home','receiving_box':'receiving_home','receiving_exceptions':'receiving_home'} -%}
 {%- set active_ep = PARENT.get(request.endpoint, request.endpoint) -%}
 {%- set ns = namespace(title=None, section=None) -%}
 {%- if u -%}{%- for sec, aud, items in NAV -%}{%- for ep, label, ic, kw in items -%}{%- if active_ep == ep -%}{%- set ns.title = label -%}{%- set ns.section = sec -%}{%- endif -%}{%- endfor -%}{%- endfor -%}{%- endif -%}

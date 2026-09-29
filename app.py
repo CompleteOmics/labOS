@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 from openpyxl import load_workbook
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LABOS_VERSION = '12.2'
+LABOS_VERSION = '12.3'
 BRANDING_DIR = os.path.join(BASE_DIR, 'branding')
 os.makedirs(BRANDING_DIR, exist_ok=True)
 DEFAULT_LOGO = os.path.join(BASE_DIR, 'static', 'complete_omics_logo.png')
@@ -164,6 +164,8 @@ class Clinic(db.Model):
     contact_email = db.Column(db.String(255))
     active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    client_id = db.Column(db.Integer, index=True)       # reference lab this account belongs to (e.g. Prevencio)
+    account_id = db.Column(db.String(80), index=True)   # the client lab's own account ID# (not unique across labs)
 
 class StandingOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -269,6 +271,9 @@ class Order(db.Model):
     requester_email = db.Column(db.String(255))
     requester_phone = db.Column(db.String(80))
     requester_organization = db.Column(db.String(255))
+    shipment_id = db.Column(db.Integer, index=True)
+    patient_first_name = db.Column(db.String(120))
+    patient_last_name = db.Column(db.String(120))
     patient_name = db.Column(db.String(255), nullable=False)
     patient_dob = db.Column(db.String(20))
     patient_sex = db.Column(db.String(20))
@@ -381,6 +386,56 @@ class ExchangeTransaction(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
+
+
+# ---------------------------------------------------------------------------
+# Reference-lab receiving (client labs such as Prevencio ship boxes of samples)
+# ---------------------------------------------------------------------------
+class ReferenceClient(db.Model):
+    """A client laboratory that ships samples to Complete Omics, with its own intake rules."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), unique=True, nullable=False)
+    code = db.Column(db.String(24), unique=True, nullable=False)
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    stability_hours = db.Column(db.Integer, default=72, nullable=False)
+    # JSON list of {"label": "CADhs", "code": "HART-CADHS"} test columns shown on the intake form/export
+    test_columns_json = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    @property
+    def test_columns(self):
+        try:
+            cols = json.loads(self.test_columns_json or '[]')
+        except ValueError:
+            cols = []
+        return [c for c in cols if c.get('label') and c.get('code')]
+
+
+class Shipment(db.Model):
+    """One box received from a client lab (usually one FedEx tracking number)."""
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('reference_client.id'), nullable=False, index=True)
+    tracking_no = db.Column(db.String(80), index=True)
+    status = db.Column(db.String(20), default='Open', nullable=False)  # Open | Closed
+    received_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    received_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    closed_at = db.Column(db.DateTime(timezone=True))
+    notes = db.Column(db.Text)
+
+
+class SampleException(db.Model):
+    """QA hold, lab clinical review or rejection raised for a received sample."""
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id'), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False, index=True)  # QA | CLINICAL | REJECTED
+    reason = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(20), default='Open', nullable=False, index=True)  # Open | Resolved
+    resolution = db.Column(db.Text)
+    resolved_at = db.Column(db.DateTime(timezone=True))
+    resolved_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
 
 class Sample(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -925,6 +980,29 @@ def ensure_v93_user_schema():
         pass
 
 
+
+def ensure_v120_receiving_schema():
+    """Columns used by reference-lab receiving (tables themselves come from db.create_all)."""
+    from sqlalchemy import inspect, text
+    inspector=inspect(db.engine)
+    tables=set(inspector.get_table_names())
+    wanted={
+        'clinic':[('client_id','INTEGER'),('account_id','VARCHAR(80)')],
+        'order':[('shipment_id','INTEGER'),('patient_first_name','VARCHAR(120)'),('patient_last_name','VARCHAR(120)')],
+    }
+    for table,cols in wanted.items():
+        if table not in tables: continue
+        have={c['name'] for c in inspector.get_columns(table)}
+        for name,typ in cols:
+            if name not in have:
+                with db.engine.begin() as conn:
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {name} {typ}'))
+    for stmt in ['CREATE INDEX IF NOT EXISTS ix_clinic_client_account ON clinic (client_id, account_id)',
+                 'CREATE INDEX IF NOT EXISTS ix_order_shipment_id ON "order" (shipment_id)']:
+        try:
+            with db.engine.begin() as conn: conn.execute(text(stmt))
+        except Exception: pass
+
 def ensure_v94_multiclinic_schema():
     """Upgrade V9.3 databases for clinic-level account and order segregation."""
     from sqlalchemy import inspect, text
@@ -1309,6 +1387,11 @@ def seed():
     db.session.commit()
     get_branding()
     seed_quality_policies()
+    if not ReferenceClient.query.filter_by(code='PREV').first():
+        db.session.add(ReferenceClient(name='Prevencio', code='PREV', stability_hours=72,
+            test_columns_json=json.dumps([{'label':'CADhs','code':'HART-CADHS'},{'label':'CVE','code':'HART-CVE'}]),
+            notes='HART-CADhs / HART-CVE reference testing'))
+        db.session.commit()
 
 
 DEFAULT_QC_POLICIES = [
@@ -2654,7 +2737,11 @@ def toggle_share_link(link_id):
 ORDER_STAGE_FROM={'receive':('Submitted',),'testing':('Received',),'save_results':('Received','Testing','Review'),'approve':('Review',)}
 
 def stage_allows(o, action):
-    return o.status in ORDER_STAGE_FROM.get(action,())
+    if o.status not in ORDER_STAGE_FROM.get(action,()):
+        return False
+    if action in ('testing','save_results') and SampleException.query.filter(SampleException.order_id==o.id,SampleException.status=='Open',SampleException.kind.in_(('QA','CLINICAL'))).first():
+        return False
+    return True
 
 def results_complete(o):
     rows=OrderTest.query.filter_by(order_id=o.id).all()
@@ -3622,6 +3709,439 @@ def autoverification_checks(order, test, order_test, numeric_value):
     return ('Hold' if hold else 'Pass'), checks
 
 
+
+# ---------------------------------------------------------------------------
+# Reference-lab receiving: client labs -> boxes -> samples -> QA / review / rejected
+# ---------------------------------------------------------------------------
+EXCEPTION_KINDS = {'QA': 'Quality Assurance (QA)', 'CLINICAL': 'Lab Clinical Review', 'REJECTED': 'Rejected'}
+
+
+def normalize_tracking(raw):
+    """Keep what staff typed, but reduce a scanned FedEx barcode (22-34 digits) to its 12-digit tracking number."""
+    raw = (raw or '').strip().rstrip(',')
+    digits = re.sub(r'\D', '', raw)
+    if len(digits) >= 22:
+        return digits[-12:]
+    return digits or raw[:80]
+
+
+def parse_date_input(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y', '%m-%d-%Y'):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f'Unrecognised date: {value}')
+
+
+def client_accounts(client):
+    return Clinic.query.filter_by(client_id=client.id, active=True).order_by(Clinic.name).all()
+
+
+def find_or_create_account(client, account_id, account_name, create=True, roster=False):
+    """Find a client-lab account by ID# (+ exact name when an ID# is shared by several accounts).
+
+    roster=True (customer-list import): a new (ID#, name) pair is always added.
+    Intake: a single account with that ID# is used as-is; a shared ID# needs the exact account name;
+    an unknown ID# is added only when a name is supplied (create=True).
+    """
+    account_id = str(account_id or '').strip()
+    account_name = (account_name or '').strip()
+    q = Clinic.query.filter_by(client_id=client.id)
+    matches = q.filter(Clinic.account_id == account_id).all() if account_id else []
+    exact = [m for m in matches if account_name and m.name.casefold() in (account_name.casefold(), f'{account_name} [{client.code} {account_id}]'.casefold())]
+    if exact:
+        return exact[0]
+    if not account_id and account_name:
+        named = q.filter(db.func.lower(Clinic.name) == account_name.lower()).first()
+        if named or not create:
+            return named
+    if not roster:
+        if len(matches) == 1:
+            return matches[0]
+        if matches or not create or not account_name:
+            return None
+    elif not account_name:
+        return matches[0] if matches else None
+    base = f'{client.code}-{account_id or "NA"}'[:70]
+    code, n = base, 2
+    while Clinic.query.filter_by(code=code).first():
+        code = f'{base}-{n}'; n += 1
+    display = account_name
+    if Clinic.query.filter(db.func.lower(Clinic.name) == display.lower()).first():
+        display = f'{account_name} [{client.code} {account_id}]'[:255]
+    c = Clinic(name=display[:255], code=code, client_id=client.id, account_id=account_id or None, active=True)
+    db.session.add(c); db.session.flush()
+    return c
+
+
+def sample_exceptions(order_id):
+    return SampleException.query.filter_by(order_id=order_id).order_by(SampleException.id).all()
+
+
+def raise_exception(order, kind, reason, u):
+    ex = SampleException(order_id=order.id, kind=kind, reason=reason[:255], created_by=u.id)
+    db.session.add(ex)
+    if kind == 'REJECTED':
+        order.status = 'Rejected'
+        for other in SampleException.query.filter_by(order_id=order.id, status='Open').all():
+            if other.kind != 'REJECTED':
+                other.status = 'Resolved'; other.resolution = 'Rejected'; other.resolved_at = utcnow(); other.resolved_by = u.id
+        ex.status = 'Resolved'; ex.resolved_at = utcnow(); ex.resolved_by = u.id
+    return ex
+
+
+def receiving_client_or_404(client_id):
+    return db.session.get(ReferenceClient, client_id) or abort(404)
+
+
+@app.route('/receiving', methods=['GET', 'POST'])
+def receiving_home():
+    u = role_required('staff', 'director')
+    if request.method == 'POST':
+        if not is_director(u): abort(403)
+        name = (request.form.get('name') or '').strip()
+        code = re.sub(r'[^A-Z0-9]', '', (request.form.get('code') or '').upper())[:12]
+        if not name or not code:
+            flash('Enter a name and a short code for the client lab.', 'danger')
+        elif ReferenceClient.query.filter((db.func.lower(ReferenceClient.name) == name.lower()) | (ReferenceClient.code == code)).first():
+            flash('A client lab with that name or code already exists.', 'danger')
+        else:
+            c = ReferenceClient(name=name, code=code, stability_hours=int(request.form.get('stability_hours') or 72), test_columns_json='[]')
+            db.session.add(c); db.session.commit(); audit('CLIENT_LAB_CREATE', 'reference_client', c.id, name)
+            flash(f'{name} added. Configure its tests and import its account list next.', 'success')
+            return redirect(url_for('receiving_client', client_id=c.id))
+        return redirect(url_for('receiving_home'))
+    day0 = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    cards = []
+    for c in ReferenceClient.query.order_by(ReferenceClient.active.desc(), ReferenceClient.name).all():
+        ship_ids = [x.id for x in Shipment.query.filter_by(client_id=c.id).with_entities(Shipment.id)]
+        cards.append({'client': c,
+                      'boxes_today': Shipment.query.filter(Shipment.client_id == c.id, Shipment.received_at >= day0).count(),
+                      'samples_today': Order.query.filter(Order.shipment_id.in_(ship_ids), Order.created_at >= day0).count() if ship_ids else 0,
+                      'open_exceptions': SampleException.query.join(Order, Order.id == SampleException.order_id).filter(Order.shipment_id.in_(ship_ids), SampleException.status == 'Open').count() if ship_ids else 0,
+                      'accounts': Clinic.query.filter_by(client_id=c.id).count()})
+    return render_template('receiving.html', u=u, cards=cards)
+
+
+@app.route('/receiving/<int:client_id>', methods=['GET', 'POST'])
+def receiving_client(client_id):
+    u = role_required('staff', 'director')
+    client = receiving_client_or_404(client_id)
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'receive_box':
+            if not client.active: abort(400)
+            tracking = normalize_tracking(request.form.get('tracking_no'))
+            if not tracking:
+                flash('Scan or type the FedEx tracking number.', 'danger'); return redirect(url_for('receiving_client', client_id=client.id))
+            existing = Shipment.query.filter_by(client_id=client.id, tracking_no=tracking, status='Open').first()
+            if existing:
+                flash('That box is already open. Continue scanning its samples.', 'warning')
+                return redirect(url_for('receiving_box', box_id=existing.id))
+            box = Shipment(client_id=client.id, tracking_no=tracking, received_by=u.id, notes=(request.form.get('notes') or '').strip() or None)
+            db.session.add(box); db.session.commit(); audit('BOX_RECEIVED', 'shipment', box.id, f'{client.code}; tracking={tracking}')
+            return redirect(url_for('receiving_box', box_id=box.id))
+        if not is_director(u): abort(403)
+        if action == 'settings':
+            client.stability_hours = max(1, min(int(request.form.get('stability_hours') or 72), 24 * 30))
+            client.active = request.form.get('active') == '1'
+            cols = []
+            for label, code in zip(request.form.getlist('col_label'), request.form.getlist('col_code')):
+                label, code = label.strip(), code.strip()
+                if label and code:
+                    if not Test.query.filter_by(code=code).first(): abort(400)
+                    cols.append({'label': label[:40], 'code': code})
+            client.test_columns_json = json.dumps(cols)
+            db.session.commit(); audit('CLIENT_LAB_SETTINGS', 'reference_client', client.id, f'stability={client.stability_hours}; tests={[c["code"] for c in cols]}')
+            flash('Settings saved.', 'success')
+        elif action == 'import_accounts':
+            f = request.files.get('roster')
+            if not f or not (f.filename or '').lower().endswith(('.xlsx', '.csv')):
+                flash('Choose the customer list as .xlsx or .csv.', 'danger'); return redirect(url_for('receiving_client', client_id=client.id))
+            rows = read_account_roster(f)
+            created = matched = 0
+            for name, acc_id in rows:
+                before = Clinic.query.filter_by(client_id=client.id).count()
+                c = find_or_create_account(client, acc_id, name, create=True, roster=True)
+                if Clinic.query.filter_by(client_id=client.id).count() > before: created += 1
+                else: matched += 1
+            db.session.commit(); audit('CLIENT_ACCOUNTS_IMPORT', 'reference_client', client.id, f'rows={len(rows)}; created={created}; matched={matched}')
+            flash(f'Account list imported: {created} new, {matched} already known.', 'success')
+        return redirect(url_for('receiving_client', client_id=client.id))
+    boxes = Shipment.query.filter_by(client_id=client.id).order_by(Shipment.id.desc()).limit(25).all()
+    counts = {b.id: Order.query.filter_by(shipment_id=b.id).count() for b in boxes}
+    users = {x.id: x for x in User.query.all()}
+    ship_ids = [x.id for x in Shipment.query.filter_by(client_id=client.id).with_entities(Shipment.id)]
+    open_ex = {}
+    if ship_ids:
+        for kind, n in db.session.query(SampleException.kind, db.func.count(SampleException.id)).join(Order, Order.id == SampleException.order_id).filter(Order.shipment_id.in_(ship_ids), SampleException.status == 'Open').group_by(SampleException.kind).all():
+            open_ex[kind] = n
+    rejected = Order.query.filter(Order.shipment_id.in_(ship_ids), Order.status == 'Rejected').count() if ship_ids else 0
+    months = sorted({(b.received_at.year, b.received_at.month) for b in Shipment.query.filter_by(client_id=client.id).all()}, reverse=True)
+    return render_template('receiving_client.html', u=u, client=client, boxes=boxes, counts=counts, users=users, open_ex=open_ex, rejected=rejected,
+                           accounts=client_accounts(client), tests=Test.query.filter_by(active=True).order_by(Test.name).all(),
+                           months=[f'{y}-{m:02d}' for y, m in months] or [utcnow().strftime('%Y-%m')])
+
+
+def read_account_roster(file_storage):
+    """Rows of (account name, account ID#) from a customer list; accepts the headerless 'Customers' tab or name/id headers."""
+    data = file_storage.read(5_000_001)
+    if len(data) > 5_000_000: raise ValueError('File too large')
+    if file_storage.filename.lower().endswith('.csv'):
+        try: text_data = data.decode('utf-8-sig')
+        except UnicodeDecodeError: text_data = data.decode('cp1252')
+        records = list(csv.reader(io.StringIO(text_data)))
+    else:
+        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        try:
+            ws = next((w for w in wb.worksheets if w.title.strip().lower() == 'customers'), wb.active)
+            records = [list(r) for r in ws.iter_rows(values_only=True)]
+        finally:
+            wb.close()
+    out = []
+    for i, r in enumerate(records):
+        cells = [str(c).strip() if c is not None else '' for c in r]
+        if len(cells) < 2 or not cells[0]: continue
+        name, acc = cells[0], cells[1]
+        if i == 0 and re.search(r'name|clinic|account', name, re.I) and not re.search(r'\d', acc): continue  # header row
+        if isinstance(r[1], float) and r[1].is_integer(): acc = str(int(r[1]))
+        out.append((name[:255], acc[:80]))
+    return out
+
+
+@app.route('/receiving/boxes/<int:box_id>', methods=['GET', 'POST'])
+def receiving_box(box_id):
+    u = role_required('staff', 'director')
+    box = db.session.get(Shipment, box_id) or abort(404)
+    client = receiving_client_or_404(box.client_id)
+    form = {}
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'add_sample':
+            form = request.form.to_dict()
+            error = None
+            if box.status != 'Open':
+                error = 'This box is closed. Reopen it to add samples.'
+            order_code = (request.form.get('order_code') or '').strip().rstrip(',')
+            first = (request.form.get('first_name') or '').strip()
+            last = (request.form.get('last_name') or '').strip()
+            sex = (request.form.get('sex') or '').strip().upper()[:1]
+            dob = collected = None
+            if not error:
+                try:
+                    dob = parse_date_input(request.form.get('dob'))
+                    collected = parse_date_input(request.form.get('collected'))
+                except ValueError as exc:
+                    error = str(exc)
+            test_ids = []
+            for col in client.test_columns:
+                if request.form.get(f"test_{col['code']}"):
+                    t = Test.query.filter_by(code=col['code']).first()
+                    if t: test_ids.append(t.id)
+            decision = request.form.get('decision') or 'accept'
+            if not error:
+                if not order_code: error = 'Scan or type the Order ID.'
+                elif Order.query.filter_by(accession_no=order_code).first() or Sample.query.filter_by(sample_no=order_code).first():
+                    error = f'Order ID {order_code} has already been received.'
+                elif not (first and last): error = "Enter the patient's first and last name."
+                elif not dob: error = 'Enter the date of birth.'
+                elif dob > utcnow().date(): error = 'Date of birth cannot be in the future.'
+                elif collected and collected > box.received_at.date(): error = 'Collection date is after the date received.'
+                elif sex and sex not in ('F', 'M', 'U', 'X'): error = 'Sex must be F, M, X or U.'
+                elif not test_ids and decision != 'reject': error = 'Select at least one test.'
+                elif decision in ('qa', 'clinical', 'reject') and not (request.form.get('reason') or '').strip(): error = 'Enter the reason for the hold or rejection.'
+            account = None
+            if not error:
+                account = find_or_create_account(client, request.form.get('account_id'), request.form.get('account_name'), create=bool((request.form.get('account_name') or '').strip()))
+                if not account:
+                    shared = Clinic.query.filter_by(client_id=client.id, account_id=(request.form.get('account_id') or '').strip()).count() > 1
+                    error = ('That account ID# is shared by several accounts. Choose the exact account name.' if shared
+                             else 'Unknown account ID#. Enter the account name to add it to the list.')
+            if error:
+                flash(error, 'danger')
+            else:
+                received_at = box.received_at
+                o = Order(order_no=f'{client.code}-{re.sub(r"[^A-Za-z0-9-]", "", order_code)[:60]}', clinic_id=account.id, shipment_id=box.id,
+                          requester_organization=account.name, patient_first_name=first, patient_last_name=last, patient_name=f'{first} {last}',
+                          patient_dob=dob.isoformat(), patient_sex={'F': 'Female', 'M': 'Male', 'X': 'X', 'U': 'Unknown'}.get(sex, None),
+                          status='Received', created_at=received_at, accession_no=order_code, sample_received_at=received_at,
+                          notes=(request.form.get('notes') or '').strip() or None, confirmation_code=secrets.token_hex(5).upper(), billing_status='Not Billed')
+                db.session.add(o); db.session.flush()
+                for tid in test_ids: db.session.add(OrderTest(order_id=o.id, test_id=tid))
+                db.session.add(Sample(sample_no=order_code, order_id=o.id, specimen_type='Serum', status='Received', received_at=received_at,
+                                      collected_at=collected.isoformat() if collected else None))
+                auto = []
+                if not collected:
+                    auto.append(('QA', 'No sample collection date'))
+                elif (received_at.date() - collected).days * 24 > client.stability_hours:
+                    auto.append(('QA', f'Stability >{client.stability_hours} hours'))
+                reason = (request.form.get('reason') or '').strip()
+                if decision == 'qa': auto.append(('QA', reason))
+                elif decision == 'clinical': auto.append(('CLINICAL', reason))
+                elif decision == 'reject': auto.append(('REJECTED', reason))
+                for kind, why in auto:
+                    raise_exception(o, kind, why, u)
+                db.session.commit()
+                audit('SAMPLE_RECEIVED', 'order', o.id, f'{client.code}; box={box.id}; order_id={order_code}; account={account.account_id}; tests={len(test_ids)}; flags={[k for k, _ in auto]}')
+                msg = f'{order_code} added.'
+                if auto: msg += ' Flagged: ' + '; '.join(f'{EXCEPTION_KINDS[k]} ({w})' for k, w in auto)
+                flash(msg, 'warning' if auto else 'success')
+                return redirect(url_for('receiving_box', box_id=box.id))
+        elif action in ('close', 'reopen'):
+            box.status = 'Closed' if action == 'close' else 'Open'
+            box.closed_at = utcnow() if action == 'close' else None
+            db.session.commit(); audit('BOX_' + box.status.upper(), 'shipment', box.id, box.tracking_no or '')
+            if action == 'close':
+                flash('Box closed.', 'success'); return redirect(url_for('receiving_client', client_id=client.id))
+            return redirect(url_for('receiving_box', box_id=box.id))
+        elif action == 'remove_sample':
+            o = db.session.get(Order, int(request.form['order_id'])) or abort(404)
+            if o.shipment_id != box.id: abort(400)
+            if box.status != 'Open' or o.status not in ('Received', 'Rejected') or OrderTest.query.filter(OrderTest.order_id == o.id, OrderTest.result.isnot(None)).first():
+                flash('Only samples in an open box with no results can be removed.', 'danger')
+            else:
+                code = o.accession_no
+                SampleException.query.filter_by(order_id=o.id).delete()
+                Sample.query.filter_by(order_id=o.id).delete()
+                OrderTest.query.filter_by(order_id=o.id).delete()
+                db.session.delete(o); db.session.commit()
+                audit('SAMPLE_REMOVED', 'shipment', box.id, f'order_id={code}; entered in error')
+                flash(f'{code} removed from this box.', 'success')
+            return redirect(url_for('receiving_box', box_id=box.id))
+        else:
+            abort(400)
+    orders = Order.query.filter_by(shipment_id=box.id).order_by(Order.id.desc()).all()
+    tests_by_order = {o.id: [db.session.get(Test, ot.test_id) for ot in OrderTest.query.filter_by(order_id=o.id)] for o in orders}
+    samples = {sm.order_id: sm for sm in Sample.query.filter(Sample.order_id.in_([o.id for o in orders])).all()} if orders else {}
+    exceptions = {o.id: sample_exceptions(o.id) for o in orders}
+    accounts = client_accounts(client)
+    standing = {so.clinic_id: so for so in StandingOrder.query.filter(StandingOrder.clinic_id.in_([a.id for a in accounts])).all()} if accounts else {}
+    account_js = [{'id': a.account_id or '', 'name': a.name,
+                   'cadhs': bool(standing.get(a.id) and standing[a.id].active and standing[a.id].hart_cadhs),
+                   'cve': bool(standing.get(a.id) and standing[a.id].active and standing[a.id].hart_cve)} for a in accounts]
+    receiver = db.session.get(User, box.received_by) if box.received_by else None
+    return render_template('receiving_box.html', u=u, box=box, client=client, orders=orders, tests_by_order=tests_by_order, samples=samples,
+                           exceptions=exceptions, account_js=account_js, receiver=receiver, form=form, kinds=EXCEPTION_KINDS)
+
+
+@app.route('/receiving/<int:client_id>/exceptions', methods=['GET', 'POST'])
+def receiving_exceptions(client_id):
+    u = role_required('staff', 'director')
+    client = receiving_client_or_404(client_id)
+    kind = request.args.get('kind', 'QA')
+    if kind not in EXCEPTION_KINDS: abort(404)
+    if request.method == 'POST':
+        ex = db.session.get(SampleException, int(request.form['exception_id'])) or abort(404)
+        o = db.session.get(Order, ex.order_id)
+        box = db.session.get(Shipment, o.shipment_id) if o and o.shipment_id else None
+        if not box or box.client_id != client.id: abort(400)
+        action = request.form.get('action')
+        note = (request.form.get('resolution') or '').strip()
+        if ex.status != 'Open':
+            flash('That item is already resolved.', 'warning')
+        elif action == 'resolve':
+            if not note:
+                flash('Describe the resolution.', 'danger')
+            else:
+                ex.status, ex.resolution, ex.resolved_at, ex.resolved_by = 'Resolved', note[:2000], utcnow(), u.id
+                db.session.commit(); audit('SAMPLE_EXCEPTION_RESOLVED', 'order', o.id, f'{ex.kind}; {ex.reason}; {note}')
+                flash(f'{o.accession_no} released from {EXCEPTION_KINDS[ex.kind]}.', 'success')
+        elif action == 'reject':
+            raise_exception(o, 'REJECTED', note or ex.reason, u)
+            db.session.commit(); audit('SAMPLE_REJECTED', 'order', o.id, note or ex.reason)
+            flash(f'{o.accession_no} rejected.', 'warning')
+        elif action == 'to_clinical':
+            ex.status, ex.resolution, ex.resolved_at, ex.resolved_by = 'Resolved', 'Moved to Lab Clinical Review', utcnow(), u.id
+            raise_exception(o, 'CLINICAL', note or ex.reason, u)
+            db.session.commit(); audit('SAMPLE_TO_CLINICAL_REVIEW', 'order', o.id, note or ex.reason)
+            flash(f'{o.accession_no} moved to Lab Clinical Review.', 'success')
+        else:
+            abort(400)
+        return redirect(url_for('receiving_exceptions', client_id=client.id, kind=kind))
+    ship_ids = [x.id for x in Shipment.query.filter_by(client_id=client.id).with_entities(Shipment.id)]
+    rows = []
+    if ship_ids:
+        q = db.session.query(SampleException, Order).join(Order, Order.id == SampleException.order_id).filter(Order.shipment_id.in_(ship_ids), SampleException.kind == kind)
+        if kind != 'REJECTED' and request.args.get('show') != 'all':
+            q = q.filter(SampleException.status == 'Open')
+        rows = q.order_by(SampleException.id.desc()).limit(500).all()
+    counts = {}
+    if ship_ids:
+        for k, n in db.session.query(SampleException.kind, db.func.count(SampleException.id)).join(Order, Order.id == SampleException.order_id).filter(Order.shipment_id.in_(ship_ids), db.or_(SampleException.status == 'Open', SampleException.kind == 'REJECTED')).group_by(SampleException.kind).all():
+            counts[k] = n
+    clinics = {c.id: c for c in client_accounts(client)}
+    return render_template('receiving_exceptions.html', u=u, client=client, kind=kind, rows=rows, counts=counts, kinds=EXCEPTION_KINDS, clinics=clinics,
+                           users={x.id: x for x in User.query.all()})
+
+
+@app.route('/receiving/<int:client_id>/export.xlsx')
+def receiving_export(client_id):
+    u = role_required('staff', 'director')
+    client = receiving_client_or_404(client_id)
+    month = request.args.get('month') or utcnow().strftime('%Y-%m')
+    if not re.fullmatch(r'\d{4}-\d{2}', month): abort(400)
+    y, m = int(month[:4]), int(month[5:])
+    start = datetime(y, m, 1, tzinfo=timezone.utc)
+    end = datetime(y + (m == 12), (m % 12) + 1, 1, tzinfo=timezone.utc)
+    boxes = {b.id: b for b in Shipment.query.filter(Shipment.client_id == client.id, Shipment.received_at >= start, Shipment.received_at < end).all()}
+    orders = Order.query.filter(Order.shipment_id.in_(list(boxes))).order_by(Order.id).all() if boxes else []
+    users = {x.id: x for x in User.query.all()}
+    cols = client.test_columns
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook()
+
+    def d(v):
+        if not v: return None
+        if isinstance(v, datetime): return v.replace(tzinfo=None)
+        try: return datetime.strptime(str(v)[:10], '%Y-%m-%d')
+        except ValueError: return str(v)
+
+    def base(o):
+        box = boxes[o.shipment_id]; clinic = db.session.get(Clinic, o.clinic_id) if o.clinic_id else None
+        sm = Sample.query.filter_by(order_id=o.id).first()
+        codes = {db.session.get(Test, ot.test_id).code for ot in OrderTest.query.filter_by(order_id=o.id)}
+        flags = [1 if c['code'] in codes else 0 for c in cols]
+        return [o.accession_no, d(box.received_at), d(sm.collected_at if sm else None), clinic.account_id if clinic else None, clinic.name if clinic else o.requester_organization,
+                o.patient_last_name, o.patient_first_name, d(o.patient_dob), (o.patient_sex or '')[:1] or None] + flags + [sum(flags)], box
+
+    def who(uid):
+        x = users.get(uid); return (x.name or x.username).split()[0] if x else None
+
+    head = ['Order ID', 'Date Received', 'Date Collected', 'Account ID#', 'Account Name', 'Patient Last Name', 'Patient First Name', 'Patient DOB', 'Sex'] + [c['label'] for c in cols] + ['# of Tests']
+
+    def sheet(title, headers, rows):
+        ws = wb.create_sheet(title[:31]); ws.append(headers)
+        for c in ws[1]: c.font = Font(bold=True)
+        for r in rows: ws.append(r)
+        for col_cells in ws.columns:
+            for c in col_cells[1:]:
+                if isinstance(c.value, datetime): c.number_format = 'mm/dd/yyyy'
+        ws.freeze_panes = 'A2'
+
+    main, qa, clin, rej = [], [], [], []
+    for o in orders:
+        row, box = base(o)
+        main.append(row + [who(box.received_by), box.tracking_no, o.notes])
+        for ex in sample_exceptions(o.id):
+            if ex.kind == 'QA': qa.append(row + [who(box.received_by), box.tracking_no, ex.reason, ex.resolution if ex.resolution != 'Rejected' else 'Rejected', d(ex.resolved_at), o.notes])
+            elif ex.kind == 'CLINICAL': clin.append(row + [ex.reason, ex.resolution, d(ex.resolved_at), o.notes])
+            elif ex.kind == 'REJECTED': rej.append(row + [who(box.received_by), box.tracking_no, ex.reason, d(ex.created_at), o.notes])
+    wb.remove(wb.active)
+    sheet(start.strftime('%B %Y'), head + ['Received By', 'FedEx #', 'Notes'], main)
+    sheet('Quality Assurance (QA)', head + ['Received By', 'FedEx #', 'Quality Assurance (QA) Reason', 'Quality Assurance (QA) Resolution', 'Quality Assurance (QA) Resolution Date', 'Notes'], qa)
+    sheet('Lab Clinical Review', head + ['Lab Clinical Review Reason', 'Lab Resolution', 'Resolution Date', 'Notes'], clin)
+    sheet('Rejected', head + ['Received By', 'FedEx #', 'Rejection Reason', 'Rejection Date', 'Notes'], rej)
+    sheet('Customers', ['Account Name', 'Account ID#'], [[c.name, c.account_id] for c in client_accounts(client)])
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    audit('RECEIVING_EXPORT', 'reference_client', client.id, f'month={month}; samples={len(orders)}')
+    return send_file(out, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True,
+                     download_name=f'{client.name} accessioning {month}.xlsx')
+
 @app.route('/samples')
 def samples():
     role_required('staff','director');u=current_user()
@@ -3852,7 +4372,7 @@ def export_inventory():
 
 
 with app.app_context():
-    db.create_all();ensure_v93_user_schema();ensure_v94_multiclinic_schema();ensure_v96_billing_schema();ensure_v100_final_schema();ensure_v110_security_schema();ensure_v114_loinc_schema();seed()
+    db.create_all();ensure_v120_receiving_schema();ensure_v93_user_schema();ensure_v94_multiclinic_schema();ensure_v96_billing_schema();ensure_v100_final_schema();ensure_v110_security_schema();ensure_v114_loinc_schema();seed()
 
 if __name__=='__main__':
     app.run(host='0.0.0.0',port=int(os.environ.get('PORT','5000')),debug=os.environ.get('FLASK_DEBUG')=='1')

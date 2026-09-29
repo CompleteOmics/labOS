@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <div class="crumbs" style="margin-bottom:4px"><a href="{{ url_for('receiving_home') }}">Receiving</a> / {{ client.name }}</div>
+    <h1>{{ client.name }}</h1>
+    <p>{{ accounts|length }} accounts · samples collected more than {{ client.stability_hours }} hours before arrival go to QA automatically{% if client.test_columns %} · tests: {{ client.test_columns|map(attribute='label')|join(', ') }}{% endif %}</p>
+  </div>
+  <div class="btn-row">
+    <form method="get" action="{{ url_for('receiving_export', client_id=client.id) }}" class="inline-form">
+      <select name="month" class="mini-select" aria-label="Month to export">{% for m in months %}<option>{{ m }}</option>{% endfor %}</select>
+      <button class="secondary" type="submit">{{ icon('download') }}Download spreadsheet</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid2" style="grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)">
+  <div class="card">
+    <div class="card-head"><h2>Receive a box</h2></div>
+    {% if client.active %}
+    <form method="post" autocomplete="off">
+      <input type="hidden" name="action" value="receive_box">
+      <label for="tracking">Scan the FedEx label</label>
+      <input id="tracking" name="tracking_no" placeholder="Scan or type tracking number" autofocus required style="font-family:var(--mono);font-size:16px">
+      <label for="box_notes">Notes <small>(optional)</small></label>
+      <input id="box_notes" name="notes" placeholder="e.g. ice pack melted, box damaged">
+      <button type="submit">{{ icon('package') }}Open box and scan samples</button>
+    </form>
+    {% else %}<p class="muted">This client lab is inactive.</p>{% endif %}
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Needs attention</h2></div>
+    <div class="quick" style="grid-template-columns:1fr">
+      <a href="{{ url_for('receiving_exceptions', client_id=client.id, kind='QA') }}">{{ icon('alert') }}Quality Assurance (QA)<b style="margin-left:auto">{{ open_ex.get('QA', 0) }}</b></a>
+      <a href="{{ url_for('receiving_exceptions', client_id=client.id, kind='CLINICAL') }}">{{ icon('activity') }}Lab Clinical Review<b style="margin-left:auto">{{ open_ex.get('CLINICAL', 0) }}</b></a>
+      <a href="{{ url_for('receiving_exceptions', client_id=client.id, kind='REJECTED') }}">{{ icon('logout') }}Rejected<b style="margin-left:auto">{{ rejected }}</b></a>
+    </div>
+  </div>
+</div>
+
+<div class="card flush">
+  <div class="card-head"><h2>Recent boxes</h2></div>
+  <table>
+    <tr><th>Box</th><th>FedEx #</th><th>Received</th><th>Received by</th><th>Samples</th><th>Status</th></tr>
+    {% for b in boxes %}
+    <tr>
+      <td><a href="{{ url_for('receiving_box', box_id=b.id) }}">Box {{ b.id }}</a></td>
+      <td><span class="mono">{{ b.tracking_no or 'N/A' }}</span></td>
+      <td data-sort="{{ b.received_at.isoformat() }}">{{ fmt_dt(b.received_at) }}</td>
+      <td>{{ (users.get(b.received_by).name if users.get(b.received_by) else 'N/A') }}</td>
+      <td>{{ counts[b.id] }}</td>
+      <td><span class="pill {{ 'warn' if b.status == 'Open' else 'good' }}">{{ b.status }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">No boxes received yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="grid2">
+  <details class="card">
+    <summary>Accounts ({{ accounts|length }})</summary>
+    <div class="table-wrap" style="max-height:420px;overflow:auto;margin-top:8px">
+      <table class="no-enhance"><tr><th>Account ID#</th><th>Account name</th></tr>
+        {% for a in accounts %}<tr><td class="mono">{{ a.account_id or 'N/A' }}</td><td>{{ a.name }}</td></tr>{% else %}<tr><td colspan="2" class="empty">No accounts yet. Import the customer list.</td></tr>{% endfor %}
+      </table>
+    </div>
+    {% if u.role in ('director','master') %}
+    <form method="post" enctype="multipart/form-data" style="margin-top:12px">
+      <input type="hidden" name="action" value="import_accounts">
+      <label for="roster">Import customer list <small>(the "Customers" tab: account name, account ID#)</small></label>
+      <input id="roster" type="file" name="roster" accept=".xlsx,.csv" required>
+      <button class="secondary" type="submit">Import accounts</button>
+    </form>
+    {% endif %}
+  </details>
+
+  {% if u.role in ('director','master') %}
+  <details class="card">
+    <summary>Settings</summary>
+    <form method="post" style="margin-top:8px">
+      <input type="hidden" name="action" value="settings">
+      <label for="stab">Stability limit (hours from collection to receipt)</label>
+      <input id="stab" name="stability_hours" type="number" min="1" value="{{ client.stability_hours }}">
+      <label>Test columns <small>(label on the form and spreadsheet, and the LabOS test it orders)</small></label>
+      {% set cols = client.test_columns + [{'label':'','code':''}] %}
+      {% for c in cols %}
+      <div class="form-row">
+        <input name="col_label" value="{{ c.label }}" placeholder="Label, e.g. CADhs" aria-label="Column label">
+        <select name="col_code" aria-label="Test"><option value="">(none)</option>{% for t in tests %}<option value="{{ t.code }}" {% if t.code == c.code %}selected{% endif %}>{{ t.name }} · {{ t.code }}</option>{% endfor %}</select>
+      </div>
+      {% endfor %}
+      <label class="checkline"><input type="checkbox" name="active" value="1" {% if client.active %}checked{% endif %}> Active</label>
+      <button type="submit" style="margin-top:10px">Save settings</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

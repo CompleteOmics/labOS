@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <div class="crumbs" style="margin-bottom:4px"><a href="{{ url_for('receiving_home') }}">Receiving</a> / <a href="{{ url_for('receiving_client', client_id=client.id) }}">{{ client.name }}</a> / {{ kinds[kind] }}</div>
+    <h1>{{ kinds[kind] }}</h1>
+    <p>{% if kind == 'REJECTED' %}Samples rejected at receipt or after review.{% else %}Samples on hold. Resolve them to let testing continue, or reject them.{% endif %}</p>
+  </div>
+  {% if kind != 'REJECTED' %}<a class="button secondary" href="{{ url_for('receiving_exceptions', client_id=client.id, kind=kind, show=None if request.args.get('show') == 'all' else 'all') }}">{{ 'Show open only' if request.args.get('show') == 'all' else 'Show resolved too' }}</a>{% endif %}
+</div>
+
+<nav class="sectiontabs">
+  {% for k, label in kinds.items() %}
+  <a href="{{ url_for('receiving_exceptions', client_id=client.id, kind=k) }}" class="{{ 'active' if k == kind }}">{{ label }} <span class="muted">{{ counts.get(k, 0) }}</span></a>
+  {% endfor %}
+</nav>
+
+<div class="card flush">
+  <table>
+    <tr><th>Order ID</th><th>Patient</th><th>Account</th><th>Reason</th><th>{{ 'Rejected' if kind == 'REJECTED' else 'Raised' }}</th><th>{{ 'Resolution' if kind != 'REJECTED' else '' }}</th></tr>
+    {% for ex, o in rows %}
+    <tr>
+      <td><a class="mono" href="{{ url_for('order_detail', order_id=o.id) }}">{{ o.accession_no }}</a></td>
+      <td>{{ o.patient_last_name }}, {{ o.patient_first_name }}<small>DOB {{ o.patient_dob }}</small></td>
+      <td>{{ clinics[o.clinic_id].name if clinics.get(o.clinic_id) else o.requester_organization }}<small>{{ clinics[o.clinic_id].account_id if clinics.get(o.clinic_id) else '' }}</small></td>
+      <td>{{ ex.reason }}</td>
+      <td data-sort="{{ ex.created_at.isoformat() }}">{{ fmt_dt(ex.created_at) }}<small>{{ users[ex.created_by].name if users.get(ex.created_by) else '' }}</small></td>
+      <td>
+        {% if kind == 'REJECTED' %}
+        {% elif ex.status == 'Open' %}
+        <form method="post" style="min-width:260px">
+          <input type="hidden" name="exception_id" value="{{ ex.id }}">
+          <input name="resolution" placeholder="Resolution, e.g. provider confirmed date 8/29" aria-label="Resolution for {{ o.accession_no }}">
+          <div class="inline-form">
+            <button class="mini-button" name="action" value="resolve">Resolve &amp; accept</button>
+            {% if kind == 'QA' %}<button class="mini-button ghost" name="action" value="to_clinical">To clinical review</button>{% endif %}
+            <button class="mini-button danger-outline" name="action" value="reject" onclick="return confirm('Reject {{ o.accession_no|e }}? It will not be tested.')">Reject</button>
+          </div>
+        </form>
+        {% else %}
+        <span class="pill {{ 'bad' if ex.resolution == 'Rejected' else 'good' }}">{{ ex.resolution }}</span><small>{{ fmt_dt(ex.resolved_at) }}</small>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">Nothing here.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

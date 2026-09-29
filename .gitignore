@@ -7,3 +7,11 @@ lis_v7.db
 .env
 *.bat
 .claude/
+
+# Never commit lab data files (may contain PHI). Only the blank templates are tracked.
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+!Complete_Omics_Reference_Intervals_Template.xlsx
+!Complete_Omics_Reference_Intervals_Template.csv

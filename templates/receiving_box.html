@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <div class="crumbs" style="margin-bottom:4px"><a href="{{ url_for('receiving_home') }}">Receiving</a> / <a href="{{ url_for('receiving_client', client_id=client.id) }}">{{ client.name }}</a> / Box {{ box.id }}</div>
+    <h1>Box {{ box.id }} <span class="pill {{ 'warn' if box.status == 'Open' else 'good' }}" style="vertical-align:middle;margin-left:6px">{{ box.status }}</span></h1>
+    <p>FedEx <span class="mono">{{ box.tracking_no or 'N/A' }}</span> · received {{ fmt_dt(box.received_at) }} by {{ receiver.name if receiver else 'N/A' }} · {{ orders|length }} sample{{ '' if orders|length == 1 else 's' }}{% if box.notes %} · {{ box.notes }}{% endif %}</p>
+  </div>
+  <form method="post" class="btn-row">
+    {% if box.status == 'Open' %}
+    <button name="action" value="close" class="secondary" onclick="return confirm('Close this box? You can reopen it later if needed.')">{{ icon('check') }}Close box</button>
+    {% else %}
+    <button name="action" value="reopen" class="secondary">Reopen box</button>
+    {% endif %}
+  </form>
+</div>
+
+<div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:start">
+  {% if box.status == 'Open' %}
+  <div class="card" style="position:sticky;top:74px">
+    <div class="card-head"><h2>Add a sample</h2><small>Enter moves to the next field</small></div>
+    <form method="post" id="intake" autocomplete="off">
+      <input type="hidden" name="action" value="add_sample">
+      <label for="order_code">Order ID <small>(scan the tube)</small></label>
+      <input id="order_code" name="order_code" value="{{ form.get('order_code','') }}" required autofocus style="font-family:var(--mono);font-size:16px">
+
+      <div class="form-row">
+        <div><label for="collected">Date collected</label><input id="collected" name="collected" type="date" value="{{ form.get('collected','') }}"></div>
+        <div><label for="account_id">Account ID#</label><input id="account_id" name="account_id" list="accounts" value="{{ form.get('account_id','') }}" required></div>
+      </div>
+      <div id="stability" class="alert warning" style="display:none;margin:-4px 0 10px"></div>
+      <label for="account_name">Account name</label>
+      <input id="account_name" name="account_name" list="shared_names" value="{{ form.get('account_name','') }}" placeholder="Fills in from the account ID#">
+      <datalist id="shared_names"></datalist>
+      <small id="account_hint" class="mini" style="display:block;margin:-8px 0 10px"></small>
+
+      <div class="form-row">
+        <div><label for="last_name">Patient last name</label><input id="last_name" name="last_name" value="{{ form.get('last_name','') }}" required></div>
+        <div><label for="first_name">Patient first name</label><input id="first_name" name="first_name" value="{{ form.get('first_name','') }}" required></div>
+      </div>
+      <div class="form-row">
+        <div><label for="dob">Patient DOB</label><input id="dob" name="dob" type="date" value="{{ form.get('dob','') }}" required></div>
+        <div><label for="sex">Sex</label>
+          <select id="sex" name="sex"><option value=""></option>{% for v,l in [('F','F'),('M','M'),('X','X'),('U','Unknown')] %}<option value="{{ v }}" {% if form.get('sex') == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+      </div>
+
+      <label>Tests</label>
+      <div class="radio-row" style="margin:4px 0 12px">
+        {% for c in client.test_columns %}
+        <label class="checkline"><input type="checkbox" name="test_{{ c.code }}" value="1" data-code="{{ c.code }}" {% if form.get('test_' ~ c.code) %}checked{% endif %}> {{ c.label }}</label>
+        {% else %}<span class="muted">No test columns configured for {{ client.name }}.</span>{% endfor %}
+      </div>
+
+      <label for="decision">Status</label>
+      <select id="decision" name="decision">
+        {% for v,l in [('accept','Accept'),('qa','Quality Assurance (QA) hold'),('clinical','Lab Clinical Review'),('reject','Reject')] %}<option value="{{ v }}" {% if form.get('decision') == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select>
+      <div id="reason_wrap" style="display:none">
+        <label for="reason">Reason</label>
+        <input id="reason" name="reason" list="reasons" value="{{ form.get('reason','') }}">
+      </div>
+      <label for="notes">Notes <small>(optional)</small></label>
+      <input id="notes" name="notes" value="{{ form.get('notes','') }}">
+      <button type="submit" style="width:100%;margin-top:4px">{{ icon('plus') }}Add sample</button>
+    </form>
+    <datalist id="accounts">{% for a in account_js %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</datalist>
+    <datalist id="reasons"><option value="Stability >{{ client.stability_hours }} hours"><option value="No sample collection date"><option value="Hemolyzed"><option value="Insufficient volume"><option value="Leaked / broken tube"><option value="Label does not match requisition"><option value="Missing requisition"></datalist>
+  </div>
+  {% else %}
+  <div class="card"><p class="muted" style="margin:0">This box is closed. Reopen it to add or remove samples.</p></div>
+  {% endif %}
+
+  <div class="card flush">
+    <div class="card-head"><h2>Samples in this box</h2></div>
+    <table>
+      <tr><th>Order ID</th><th>Patient</th><th>Account</th><th>Tests</th><th>Status</th><th></th></tr>
+      {% for o in orders %}
+      {% set exs = exceptions[o.id] %}
+      <tr>
+        <td><a href="{{ url_for('order_detail', order_id=o.id) }}" class="mono">{{ o.accession_no }}</a><small>collected {{ samples[o.id].collected_at if samples.get(o.id) and samples[o.id].collected_at else 'N/A' }}</small></td>
+        <td>{{ o.patient_last_name }}, {{ o.patient_first_name }}<small>DOB {{ o.patient_dob }} · {{ (o.patient_sex or 'N/A')[:1] }}</small></td>
+        <td>{{ o.requester_organization }}</td>
+        <td>{{ tests_by_order[o.id]|map(attribute='name')|join(', ') or 'None' }}</td>
+        <td>
+          {% if o.status == 'Rejected' %}<span class="pill bad">Rejected</span>
+          {% else %}{% set open_ex = exs|selectattr('status','equalto','Open')|list %}
+            {% if open_ex %}{% for e in open_ex %}<span class="pill warn">{{ 'QA' if e.kind == 'QA' else 'Clinical review' }}</span><small>{{ e.reason }}</small>{% endfor %}
+            {% else %}<span class="pill good">Accepted</span>{% endif %}
+          {% endif %}
+        </td>
+        <td>{% if box.status == 'Open' %}<form method="post" onsubmit="return confirm('Remove {{ o.accession_no|e }} from this box? Use this only for entries made in error.')"><input type="hidden" name="order_id" value="{{ o.id }}"><button class="mini-button danger-outline" name="action" value="remove_sample">Remove</button></form>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No samples yet. Scan the first tube.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var form = document.getElementById('intake'); if(!form) return;
+  var accounts = {{ account_js|tojson }};
+  var boxDate = new Date({{ box.received_at.strftime('%Y-%m-%d')|tojson }} + 'T00:00:00');
+  var limit = {{ client.stability_hours }};
+  var $ = function(id){ return document.getElementById(id); };
+
+  // Scanners and keyboards: Enter moves to the next field instead of submitting early.
+  var fields = [].slice.call(form.querySelectorAll('input:not([type=hidden]):not([type=checkbox]), select'));
+  fields.forEach(function(el, i){
+    el.addEventListener('keydown', function(e){
+      if(e.key !== 'Enter' || e.ctrlKey || e.metaKey) return;
+      if(el.id === 'notes'){ return; } // Enter in the last field submits
+      e.preventDefault();
+      var next = fields.slice(i + 1).find(function(f){ return f.offsetParent !== null; });
+      if(next){ next.focus(); if(next.select) try{ next.select(); }catch(_){} }
+    });
+  });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) form.requestSubmit(); });
+
+  // Account ID# -> account name + default tests from the account's standing order.
+  function fillAccount(){
+    var id = $('account_id').value.trim(), matches = accounts.filter(function(a){ return a.id === id; });
+    var hint = $('account_hint');
+    if(matches.length === 1){
+      $('account_name').value = matches[0].name; hint.textContent = '';
+      form.querySelectorAll('input[data-code]').forEach(function(cb){
+        if(cb.dataset.code === 'HART-CADHS') cb.checked = matches[0].cadhs || cb.checked;
+        if(cb.dataset.code === 'HART-CVE') cb.checked = matches[0].cve || cb.checked;
+      });
+    } else if(matches.length > 1){
+      var dl = $('shared_names'); dl.innerHTML = '';
+      matches.forEach(function(m){ var o = document.createElement('option'); o.value = m.name; dl.appendChild(o); });
+      if(!matches.some(function(m){ return m.name === $('account_name').value; })) $('account_name').value = '';
+      hint.textContent = 'This ID# is shared by ' + matches.length + ' accounts: pick one from the list in Account name.';
+    } else if(id){
+      hint.textContent = 'New account ID#: enter the account name to add it to ' + {{ client.name|tojson }} + "'s list.";
+    } else { hint.textContent = ''; }
+  }
+  $('account_id').addEventListener('change', fillAccount);
+  $('account_id').addEventListener('blur', fillAccount);
+
+  // Stability warning (the server flags QA automatically as well).
+  function checkStability(){
+    var box = $('stability'), v = $('collected').value;
+    if(!v){ box.style.display = 'block'; box.textContent = 'No collection date: this sample will go to QA.'; return; }
+    var hours = Math.round((boxDate - new Date(v + 'T00:00:00')) / 36e5);
+    if(hours > limit){ box.style.display = 'block'; box.textContent = 'Collected ' + Math.round(hours/24) + ' days before receipt (over ' + limit + ' h): this sample will go to QA.'; }
+    else if(hours < 0){ box.style.display = 'block'; box.textContent = 'Collection date is after the date received. Check it.'; }
+    else box.style.display = 'none';
+  }
+  $('collected').addEventListener('change', checkStability);
+
+  function toggleReason(){ var show = $('decision').value !== 'accept'; $('reason_wrap').style.display = show ? 'block' : 'none'; $('reason').required = show; }
+  $('decision').addEventListener('change', toggleReason);
+  toggleReason();
+  if($('account_id').value) fillAccount();
+})();
+</script>
+{% endblock %}

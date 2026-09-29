@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <h1>Receiving</h1>
+    <p>Client labs that ship samples to Complete Omics. Open a lab to receive boxes, scan samples and work its QA and rejection queues.</p>
+  </div>
+</div>
+
+<div class="kpis" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+  {% for c in cards %}
+  <a class="kpi" href="{{ url_for('receiving_client', client_id=c.client.id) }}" style="gap:10px">
+    <div class="kpi-top"><span style="font-size:15px;color:var(--ink);font-weight:650">{{ c.client.name }}</span>
+      {% if c.client.active %}<span class="pill good">Active</span>{% else %}<span class="pill">Inactive</span>{% endif %}</div>
+    <div class="btn-row" style="gap:18px">
+      <div><div class="kpi-val" style="font-size:22px">{{ c.boxes_today }}</div><div class="kpi-sub">boxes today</div></div>
+      <div><div class="kpi-val" style="font-size:22px">{{ c.samples_today }}</div><div class="kpi-sub">samples today</div></div>
+      <div><div class="kpi-val" style="font-size:22px;{{ 'color:var(--warning)' if c.open_exceptions }}">{{ c.open_exceptions }}</div><div class="kpi-sub">open QA / review</div></div>
+    </div>
+    <div class="kpi-sub">{{ c.accounts }} accounts · stability limit {{ c.client.stability_hours }} h</div>
+  </a>
+  {% else %}
+  <div class="card empty">No client labs yet.</div>
+  {% endfor %}
+</div>
+
+{% if u.role in ('director','master') %}
+<details class="card" style="max-width:640px">
+  <summary>Add a client lab</summary>
+  <form method="post" class="formgrid" style="margin-top:10px">
+    <div><label for="cl_name">Name</label><input id="cl_name" name="name" placeholder="e.g. Prevencio" required></div>
+    <div><label for="cl_code">Short code</label><input id="cl_code" name="code" placeholder="e.g. PREV" maxlength="12" required></div>
+    <div><label for="cl_stab">Stability limit (hours)</label><input id="cl_stab" name="stability_hours" type="number" min="1" value="72"></div>
+    <div class="full"><button type="submit">Add client lab</button></div>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

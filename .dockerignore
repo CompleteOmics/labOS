@@ -10,3 +10,9 @@ tests/
 .github/
 pytest.ini
 requirements-dev.txt
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+!Complete_Omics_Reference_Intervals_Template.xlsx
+!Complete_Omics_Reference_Intervals_Template.csv
