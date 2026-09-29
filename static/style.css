@@ -306,6 +306,7 @@ input[type=checkbox],input[type=radio]{width:auto;min-height:0;margin:0 7px 0 0;
 input[type=file]{padding:6px;background:var(--surface-2)}
 input[type=color]{padding:3px;height:38px}
 textarea{min-height:90px;resize:vertical}
+input[type=date]{min-width:0}
 select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-right:30px}
 label{font-size:12.5px;font-weight:600;color:var(--ink-2)}
 .formrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
@@ -582,6 +583,14 @@ summary.mini-button::-webkit-details-marker{display:none}
 .mfa-key{display:inline-block;font-size:15px;letter-spacing:.08em;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:8px 12px;user-select:all}
 @media (max-width:700px){.mfa-setup{grid-template-columns:1fr}.mfa-qr{max-width:220px}}
 
+/* ---------- Receiving ---------- */
+.segmented{display:inline-flex;gap:2px;padding:3px;margin:0 0 16px;background:var(--surface-3);border-radius:10px}
+.segmented a{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:8px;color:var(--muted);font-weight:600;font-size:13px;text-decoration:none}
+.segmented a svg{width:16px;height:16px}
+.segmented a:hover{color:var(--ink);text-decoration:none}
+.segmented a.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-sm)}
+.scan-page{display:block;width:100%;height:auto;max-height:78vh;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff}
+
 /* ---------- Toasts / command palette ---------- */
 .cmdk{position:fixed;inset:0;z-index:200;display:none;align-items:flex-start;justify-content:center;padding-top:12vh;background:rgba(8,15,26,.45);backdrop-filter:blur(2px)}
 .cmdk.open{display:flex}
@@ -617,6 +626,9 @@ summary.mini-button::-webkit-details-marker{display:none}
   .pipe:nth-child(3){border-right:0}
   .pipe:nth-child(n+4){border-top:1px solid var(--line)}
   .patient-card,.sticky-controls,.diagnostics-controls{position:static}
+  /* two-column layouts that set their column widths inline stack on narrow screens too */
+  .grid2[style]{grid-template-columns:1fr!important}
+  .grid2>.card[style*="sticky"]{position:static!important}
 }
 @media (max-width:700px){
   .kpis,.stats,.qualitygrid,.financial-strip,.modulebar{grid-template-columns:repeat(2,minmax(0,1fr))}

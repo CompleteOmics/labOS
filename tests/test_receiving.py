@@ -274,3 +274,92 @@ def test_shared_account_id_without_name_is_refused(app, lab, prevencio):
     assert b'shared by several accounts' in r.data
     with app.app.app_context():
         assert app.Order.query.filter_by(accession_no=f['order_code']).count() == 0
+
+
+def test_delete_box_only_when_empty(app, lab, prevencio):
+    staff = lab['staff']
+    import_roster(app, lab['director'], prevencio)
+    # create both first: SQLite reuses the id of a just-deleted row
+    empty = open_box(app, staff, prevencio, tracking=uniq('2'))
+    full = open_box(app, staff, prevencio, tracking=uniq('1'))
+    staff.post(f'/receiving/boxes/{full}', sample_form(collected=today_iso(app)))
+    staff.post(f'/receiving/boxes/{empty}', {'action': 'delete_box'})
+    r = staff.post(f'/receiving/boxes/{full}', {'action': 'delete_box'}, follow_redirects=True)
+    assert b'Only an empty box can be deleted' in r.data
+    with app.app.app_context():
+        assert app.db.session.get(app.Shipment, empty) is None
+        assert app.db.session.get(app.Shipment, full) is not None
+        assert app.Audit.query.filter_by(action='BOX_DELETED', entity_id=empty).count() == 1
+
+
+def _pdf(pages=2):
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    for i in range(pages):
+        c.drawString(72, 760, f'Test requisition page {i + 1}')
+        c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def _png():
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new('RGB', (300, 400), 'white').save(out, 'PNG')
+    return out.getvalue()
+
+
+def test_fill_automatically_upload_and_review(app, lab, prevencio, login_as):
+    staff = lab['staff']
+    import_roster(app, lab['director'], prevencio)
+    box = open_box(app, staff, prevencio, tracking=uniq('9'))
+    assert b'Fill automatically' in staff.get(f'/receiving/boxes/{box}').data
+    r = staff.post(f'/receiving/boxes/{box}', {'action': 'upload_docs',
+                   'documents': [(io.BytesIO(_pdf(2)), 'box-scan.pdf'), (io.BytesIO(_png()), 'photo.png'), (io.BytesIO(b'not a pdf'), 'notes.txt')]},
+                   follow_redirects=True)
+    assert b'Uploaded 3 pages' in r.data and b'upload a PDF or an image' in r.data
+    with app.app.app_context():
+        drafts = app.IntakeDraft.query.filter_by(shipment_id=box).order_by(app.IntakeDraft.id).all()
+        assert [d.page_no for d in drafts] == [0, 1, 0] and all(d.status == 'Pending' for d in drafts)
+        d1, d2, d3 = (d.id for d in drafts)
+    # page image renders for lab staff only
+    img = staff.get(f'/receiving/drafts/{d1}/page.png')
+    assert img.status_code == 200 and img.data[:8] == b'\x89PNG\r\n\x1a\n'
+    assert login_as('customer').get(f'/receiving/drafts/{d1}/page.png').status_code == 403
+    # reviewing a page shows it next to the form and carries the draft id
+    page = staff.get(f'/receiving/boxes/{box}?mode=auto&draft={d1}').get_data(as_text=True)
+    assert f'name="draft_id" value="{d1}"' in page and f'/receiving/drafts/{d1}/page.png' in page
+    # adding the sample marks the page done and moves on to the next page
+    f = {**sample_form(collected=today_iso(app)), 'draft_id': str(d1)}
+    r = staff.post(f'/receiving/boxes/{box}', f)
+    assert r.status_code == 302 and f'draft={d2}' in r.location
+    with app.app.app_context():
+        dd = app.db.session.get(app.IntakeDraft, d1)
+        o = app.Order.query.filter_by(accession_no=f['order_code']).one()
+        assert dd.status == 'Added' and dd.order_id == o.id
+        oid = o.id
+    # skip a non-requisition page
+    staff.post(f'/receiving/boxes/{box}', {'action': 'discard_draft', 'draft_id': str(d3)})
+    with app.app.app_context():
+        assert app.db.session.get(app.IntakeDraft, d3).status == 'Discarded'
+    # removing the sample puts its page back in the review list
+    staff.post(f'/receiving/boxes/{box}', {'action': 'remove_sample', 'order_id': str(oid)})
+    with app.app.app_context():
+        assert app.db.session.get(app.IntakeDraft, d1).status == 'Pending'
+    # closed boxes do not accept uploads
+    staff.post(f'/receiving/boxes/{box}', {'action': 'close'})
+    r = staff.post(f'/receiving/boxes/{box}', {'action': 'upload_docs', 'documents': [(io.BytesIO(_pdf(1)), 'late.pdf')]}, follow_redirects=True)
+    assert b'Reopen the box' in r.data
+    # deleting the (now empty) box removes its paperwork too
+    staff.post(f'/receiving/boxes/{box}', {'action': 'reopen'})
+    staff.post(f'/receiving/boxes/{box}', {'action': 'delete_box'})
+    with app.app.app_context():
+        assert app.db.session.get(app.Shipment, box) is None
+        assert app.IntakeDraft.query.filter_by(shipment_id=box).count() == 0
+        assert app.ShipmentDocument.query.filter_by(shipment_id=box).count() == 0
+
+
+def test_extract_fields_placeholder_returns_nothing(app, prevencio):
+    with app.app.app_context():
+        assert app.extract_fields(None, app.db.session.get(app.ReferenceClient, prevencio)) == {}

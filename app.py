@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 from openpyxl import load_workbook
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LABOS_VERSION = '12.3'
+LABOS_VERSION = '12.4'
 BRANDING_DIR = os.path.join(BASE_DIR, 'branding')
 os.makedirs(BRANDING_DIR, exist_ok=True)
 DEFAULT_LOGO = os.path.join(BASE_DIR, 'static', 'complete_omics_logo.png')
@@ -138,6 +138,7 @@ elif raw_db and raw_db.startswith('postgresql://'):
     raw_db = 'postgresql+psycopg://' + raw_db[len('postgresql://'):]
 app.config['SQLALCHEMY_DATABASE_URI'] = raw_db or 'sqlite:///' + os.path.join(BASE_DIR, 'lis_v7.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = 60 * 1024 * 1024  # largest single upload request (e.g. a box's scanned paperwork)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('COOKIE_SECURE', '0') == '1'
@@ -422,6 +423,35 @@ class Shipment(db.Model):
     received_by = db.Column(db.Integer, db.ForeignKey('user.id'))
     closed_at = db.Column(db.DateTime(timezone=True))
     notes = db.Column(db.Text)
+
+
+class ShipmentDocument(db.Model):
+    """A scanned requisition file (PDF or image) uploaded for a box."""
+    id = db.Column(db.Integer, primary_key=True)
+    shipment_id = db.Column(db.Integer, db.ForeignKey('shipment.id'), nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    content_type = db.Column(db.String(80), nullable=False)
+    content = db.Column(db.LargeBinary, nullable=False)
+    page_count = db.Column(db.Integer, default=1, nullable=False)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    uploaded_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class IntakeDraft(db.Model):
+    """Fields read automatically from one page of an uploaded requisition, waiting for a person to confirm."""
+    id = db.Column(db.Integer, primary_key=True)
+    shipment_id = db.Column(db.Integer, db.ForeignKey('shipment.id'), nullable=False, index=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('shipment_document.id'), nullable=False)
+    page_no = db.Column(db.Integer, nullable=False)  # 0-based
+    fields_json = db.Column(db.Text)
+    status = db.Column(db.String(20), default='Pending', nullable=False)  # Pending | Added | Discarded
+    order_id = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    @property
+    def fields(self):
+        try: return json.loads(self.fields_json or '{}')
+        except ValueError: return {}
 
 
 class SampleException(db.Model):
@@ -3913,6 +3943,69 @@ def read_account_roster(file_storage):
     return out
 
 
+
+# ---- Automatic intake from scanned requisitions (placeholder) ----
+# Uploaded paperwork is stored with the box and split into pages that staff review next to the intake form.
+# extract_fields() is where an AI reader (e.g. Claude on Amazon Bedrock under the AWS BAA) will plug in.
+MAX_DOC_BYTES = 25 * 1024 * 1024
+MAX_DOC_PAGES = 60
+
+
+def extract_fields(image, client):
+    """Return intake-form fields read from one page image. Not enabled yet: staff fill the fields by hand."""
+    return {}
+
+
+def document_pages(doc):
+    """Yield (page_index, PIL image) for a stored document."""
+    if doc.content_type == 'application/pdf':
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(doc.content)
+        try:
+            for i in range(len(pdf)):
+                yield i, pdf[i].render(scale=2).to_pil()
+        finally:
+            pdf.close()
+    else:
+        from PIL import Image
+        yield 0, Image.open(io.BytesIO(doc.content)).convert('RGB')
+
+
+def ingest_document(box, client, upload, u):
+    data = upload.read(MAX_DOC_BYTES + 1)
+    if len(data) > MAX_DOC_BYTES: raise ValueError(f'{upload.filename}: larger than 25 MB')
+    name = os.path.basename(upload.filename or 'scan')[:255]
+    lower = name.lower()
+    if lower.endswith('.pdf') and data[:5] == b'%PDF-':
+        ctype = 'application/pdf'
+    elif lower.endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
+        ctype = 'image/' + ('jpeg' if lower.endswith(('.jpg', '.jpeg')) else 'png' if lower.endswith('.png') else 'tiff')
+    else:
+        raise ValueError(f'{name}: upload a PDF or an image')
+    doc = ShipmentDocument(shipment_id=box.id, filename=name, content_type=ctype, content=data, uploaded_by=u.id)
+    db.session.add(doc); db.session.flush()
+    pages = 0
+    for i, image in document_pages(doc):
+        if i >= MAX_DOC_PAGES: break
+        fields = extract_fields(image, client)
+        db.session.add(IntakeDraft(shipment_id=box.id, document_id=doc.id, page_no=i, fields_json=json.dumps(fields)))
+        pages += 1
+    doc.page_count = pages
+    return doc, pages
+
+
+@app.route('/receiving/drafts/<int:draft_id>/page.png')
+def intake_draft_page(draft_id):
+    role_required('staff', 'director')
+    d = db.session.get(IntakeDraft, draft_id) or abort(404)
+    doc = db.session.get(ShipmentDocument, d.document_id) or abort(404)
+    for i, image in document_pages(doc):
+        if i == d.page_no:
+            image.thumbnail((1400, 1800))
+            out = io.BytesIO(); image.save(out, 'PNG'); out.seek(0)
+            return send_file(out, mimetype='image/png')
+    abort(404)
+
 @app.route('/receiving/boxes/<int:box_id>', methods=['GET', 'POST'])
 def receiving_box(box_id):
     u = role_required('staff', 'director')
@@ -3985,12 +4078,17 @@ def receiving_box(box_id):
                 elif decision == 'reject': auto.append(('REJECTED', reason))
                 for kind, why in auto:
                     raise_exception(o, kind, why, u)
+                draft = db.session.get(IntakeDraft, int(request.form['draft_id'])) if (request.form.get('draft_id') or '').isdigit() else None
+                if draft and draft.shipment_id == box.id:
+                    draft.status, draft.order_id = 'Added', o.id
                 db.session.commit()
                 audit('SAMPLE_RECEIVED', 'order', o.id, f'{client.code}; box={box.id}; order_id={order_code}; account={account.account_id}; tests={len(test_ids)}; flags={[k for k, _ in auto]}')
                 msg = f'{order_code} added.'
                 if auto: msg += ' Flagged: ' + '; '.join(f'{EXCEPTION_KINDS[k]} ({w})' for k, w in auto)
                 flash(msg, 'warning' if auto else 'success')
-                return redirect(url_for('receiving_box', box_id=box.id))
+                nxt = IntakeDraft.query.filter_by(shipment_id=box.id, status='Pending').order_by(IntakeDraft.id).first() if draft else None
+                if nxt: return redirect(url_for('receiving_box', box_id=box.id, mode='auto', draft=nxt.id))
+                return redirect(url_for('receiving_box', box_id=box.id, mode='auto' if draft else None))
         elif action in ('close', 'reopen'):
             box.status = 'Closed' if action == 'close' else 'Open'
             box.closed_at = utcnow() if action == 'close' else None
@@ -3998,6 +4096,42 @@ def receiving_box(box_id):
             if action == 'close':
                 flash('Box closed.', 'success'); return redirect(url_for('receiving_client', client_id=client.id))
             return redirect(url_for('receiving_box', box_id=box.id))
+        elif action == 'upload_docs':
+            files = [f for f in request.files.getlist('documents') if f and f.filename]
+            if box.status != 'Open':
+                flash('Reopen the box to upload paperwork.', 'danger')
+            elif not files:
+                flash('Choose the scanned PDF(s) for this box.', 'danger')
+            else:
+                total, errors = 0, []
+                for f in files[:30]:
+                    try:
+                        _, n = ingest_document(box, client, f, u); total += n
+                    except ValueError as exc:
+                        errors.append(str(exc))
+                    except Exception as exc:
+                        app.logger.exception('document ingest failed'); errors.append(f'{f.filename}: could not be read')
+                db.session.commit()
+                audit('BOX_DOCS_UPLOADED', 'shipment', box.id, f'files={len(files)}; pages={total}; errors={len(errors)}')
+                if total: flash(f'Uploaded {total} page{"s" if total != 1 else ""}. Click Review on each page to enter its sample.', 'success')
+                for e in errors: flash(e, 'danger')
+            return redirect(url_for('receiving_box', box_id=box.id, mode='auto'))
+        elif action == 'discard_draft':
+            d = db.session.get(IntakeDraft, int(request.form['draft_id'])) or abort(404)
+            if d.shipment_id != box.id: abort(400)
+            d.status = 'Discarded'; db.session.commit()
+            return redirect(url_for('receiving_box', box_id=box.id, mode='auto'))
+        elif action == 'delete_box':
+            if Order.query.filter_by(shipment_id=box.id).count():
+                flash('Only an empty box can be deleted. Remove its samples first.', 'danger')
+                return redirect(url_for('receiving_box', box_id=box.id))
+            tracking = box.tracking_no or ''
+            IntakeDraft.query.filter_by(shipment_id=box.id).delete()
+            ShipmentDocument.query.filter_by(shipment_id=box.id).delete()
+            db.session.delete(box); db.session.commit()
+            audit('BOX_DELETED', 'shipment', box_id, f'{client.code}; tracking={tracking}; empty box created in error')
+            flash(f'Box {box_id} deleted.', 'success')
+            return redirect(url_for('receiving_client', client_id=client.id))
         elif action == 'remove_sample':
             o = db.session.get(Order, int(request.form['order_id'])) or abort(404)
             if o.shipment_id != box.id: abort(400)
@@ -4005,6 +4139,7 @@ def receiving_box(box_id):
                 flash('Only samples in an open box with no results can be removed.', 'danger')
             else:
                 code = o.accession_no
+                IntakeDraft.query.filter_by(order_id=o.id).update({'status': 'Pending', 'order_id': None})
                 SampleException.query.filter_by(order_id=o.id).delete()
                 Sample.query.filter_by(order_id=o.id).delete()
                 OrderTest.query.filter_by(order_id=o.id).delete()
@@ -4024,8 +4159,22 @@ def receiving_box(box_id):
                    'cadhs': bool(standing.get(a.id) and standing[a.id].active and standing[a.id].hart_cadhs),
                    'cve': bool(standing.get(a.id) and standing[a.id].active and standing[a.id].hart_cve)} for a in accounts]
     receiver = db.session.get(User, box.received_by) if box.received_by else None
+    drafts = IntakeDraft.query.filter_by(shipment_id=box.id).order_by(IntakeDraft.id).all()
+    docs = {d.id: d for d in ShipmentDocument.query.filter_by(shipment_id=box.id).with_entities(ShipmentDocument.id, ShipmentDocument.filename).all()}
+    current = None
+    if (request.args.get('draft') or '').isdigit():
+        current = db.session.get(IntakeDraft, int(request.args['draft']))
+        if not current or current.shipment_id != box.id: current = None
+    auto_fields = []
+    if current and not form:
+        form = {**current.fields, 'draft_id': str(current.id)}
+        auto_fields = list(current.fields)
+    elif form.get('draft_id', '').isdigit():
+        current = db.session.get(IntakeDraft, int(form['draft_id']))
+    mode = request.args.get('mode') or ('auto' if current else 'manual')
     return render_template('receiving_box.html', u=u, box=box, client=client, orders=orders, tests_by_order=tests_by_order, samples=samples,
-                           exceptions=exceptions, account_js=account_js, receiver=receiver, form=form, kinds=EXCEPTION_KINDS)
+                           exceptions=exceptions, account_js=account_js, receiver=receiver, form=form, kinds=EXCEPTION_KINDS,
+                           drafts=drafts, docs=docs, current=current, auto_fields=auto_fields, mode=mode)
 
 
 @app.route('/receiving/<int:client_id>/exceptions', methods=['GET', 'POST'])

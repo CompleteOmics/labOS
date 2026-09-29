@@ -12,15 +12,60 @@
     {% else %}
     <button name="action" value="reopen" class="secondary">Reopen box</button>
     {% endif %}
+    {% if not orders %}<button name="action" value="delete_box" class="danger-button" onclick="return confirm('Delete this empty box? Use this only for a box opened by mistake.')">Delete box</button>{% endif %}
   </form>
 </div>
 
+{% if box.status == 'Open' %}
+<div class="segmented" role="tablist" aria-label="How to enter samples">
+  <a role="tab" href="{{ url_for('receiving_box', box_id=box.id, mode='manual') }}" class="{{ 'active' if mode == 'manual' }}" aria-selected="{{ 'true' if mode == 'manual' else 'false' }}">{{ icon('orders') }}Fill manually</a>
+  <a role="tab" href="{{ url_for('receiving_box', box_id=box.id, mode='auto') }}" class="{{ 'active' if mode == 'auto' }}" aria-selected="{{ 'true' if mode == 'auto' else 'false' }}">{{ icon('upload') }}Fill automatically <span class="pill" style="margin-left:4px">Beta</span></a>
+</div>
+{% endif %}
+
+{% if box.status == 'Open' and mode == 'auto' %}
+{% set pending = drafts|selectattr('status','equalto','Pending')|list %}
+<div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:start;margin-bottom:18px">
+  <div class="card">
+    <div class="card-head"><h2>Upload the box's paperwork</h2></div>
+    <p class="muted" style="margin-top:-6px">Scan the requisitions in this box and upload the PDF(s). Each page becomes a draft you review next to the form.</p>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="upload_docs">
+      <input type="file" name="documents" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" multiple required aria-label="Scanned requisitions">
+      <button type="submit">{{ icon('upload') }}Upload</button>
+    </form>
+    <div class="notice" style="margin-bottom:0"><b>Automatic reading is coming soon.</b> For now, the pages are shown next to the form so you can type from them; fields will fill themselves once the AI reader is switched on.</div>
+  </div>
+  <div class="card flush">
+    <div class="card-head"><h2>Pages</h2><small>{{ pending|length }} to review</small></div>
+    <table class="no-enhance">
+      <tr><th>Page</th><th>Status</th><th></th></tr>
+      {% for d in drafts if d.status != 'Discarded' %}
+      <tr {% if current and current.id == d.id %}style="background:var(--brand-soft)"{% endif %}>
+        <td>{{ docs[d.document_id].filename if docs.get(d.document_id) else 'Upload' }}<small>page {{ d.page_no + 1 }}</small></td>
+        <td>{% if d.status == 'Added' %}<span class="pill good">Added</span>{% else %}<span class="pill warn">To review</span>{% endif %}</td>
+        <td><div class="inline-form" style="justify-content:flex-end">
+          {% if d.status == 'Pending' %}
+          <a class="mini-button" href="{{ url_for('receiving_box', box_id=box.id, mode='auto', draft=d.id) }}">Review</a>
+          <form method="post"><input type="hidden" name="draft_id" value="{{ d.id }}"><button class="mini-button ghost" name="action" value="discard_draft" title="Not a requisition (e.g. packing slip)">Skip</button></form>
+          {% endif %}
+        </div></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="empty">No paperwork uploaded yet.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:start">
-  {% if box.status == 'Open' %}
+  {% if box.status == 'Open' and (mode == 'manual' or current) %}
   <div class="card" style="position:sticky;top:74px">
-    <div class="card-head"><h2>Add a sample</h2><small>Enter moves to the next field</small></div>
+    <div class="card-head"><h2>{{ 'Review page ' ~ (current.page_no + 1) if current else 'Add a sample' }}</h2><small>Enter moves to the next field</small></div>
     <form method="post" id="intake" autocomplete="off">
       <input type="hidden" name="action" value="add_sample">
+      {% if current %}<input type="hidden" name="draft_id" value="{{ current.id }}">{% endif %}
       <label for="order_code">Order ID <small>(scan the tube)</small></label>
       <input id="order_code" name="order_code" value="{{ form.get('order_code','') }}" required autofocus style="font-family:var(--mono);font-size:16px">
 
@@ -66,10 +111,20 @@
     <datalist id="accounts">{% for a in account_js %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</datalist>
     <datalist id="reasons"><option value="Stability >{{ client.stability_hours }} hours"><option value="No sample collection date"><option value="Hemolyzed"><option value="Insufficient volume"><option value="Leaked / broken tube"><option value="Label does not match requisition"><option value="Missing requisition"></datalist>
   </div>
-  {% else %}
+  {% elif box.status != 'Open' %}
   <div class="card"><p class="muted" style="margin:0">This box is closed. Reopen it to add or remove samples.</p></div>
+  {% else %}
+  <div class="card"><p class="muted" style="margin:0">Upload the paperwork, then click <b>Review</b> on a page to enter its sample.</p></div>
   {% endif %}
 
+  <div>
+  {% if current %}
+  <div class="card" style="padding:12px">
+    <div class="card-head" style="margin:0 0 8px"><h2>{{ docs[current.document_id].filename if docs.get(current.document_id) else 'Page' }} · page {{ current.page_no + 1 }}</h2>
+      <a href="{{ url_for('intake_draft_page', draft_id=current.id) }}" target="_blank" rel="noopener">Open full size</a></div>
+    <img src="{{ url_for('intake_draft_page', draft_id=current.id) }}" alt="Scanned requisition page {{ current.page_no + 1 }}" class="scan-page">
+  </div>
+  {% endif %}
   <div class="card flush">
     <div class="card-head"><h2>Samples in this box</h2></div>
     <table>
@@ -94,6 +149,7 @@
       <tr><td colspan="6" class="empty">No samples yet. Scan the first tube.</td></tr>
       {% endfor %}
     </table>
+  </div>
   </div>
 </div>
 {% endblock %}

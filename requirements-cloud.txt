@@ -11,3 +11,4 @@ pyotp==2.9.0
 gunicorn==22.0.0
 psycopg[binary]>=3.2.3
 qrcode==8.0
+pypdfium2==4.30.0
